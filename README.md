@@ -73,6 +73,8 @@ After the app is running on the Pi:
 
 The restore replaces the current browser project, clears stale local rack overrides, and then saves the restored inventory back into browser storage. The JSON export is the portable backup you can keep, commit elsewhere, or restore into another browser.
 
+After a plan has been saved on the Pi, any browser can click **Load saved plan** in the top-right toolbar to pick from the saved snapshots in `./data/plans`. Loading a server plan copies it into that browser so the rack appears on that computer too.
+
 ## Current capabilities
 
 - Business and site rack selection

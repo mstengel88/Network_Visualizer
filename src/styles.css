@@ -721,6 +721,73 @@ h1 {
   border-radius: 8px;
 }
 
+.saved-plans-panel {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  color: #14211b;
+}
+
+.modal-heading-row,
+.saved-plan-card,
+.saved-plan-meta {
+  display: flex;
+  align-items: center;
+}
+
+.modal-heading-row,
+.saved-plan-card {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modal-heading-row h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 3rem);
+  line-height: 1;
+}
+
+.saved-plan-list {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-plan-card {
+  padding: 14px;
+  border: 1px solid #d5ded9;
+  border-radius: 8px;
+  background: #f8fbf9;
+}
+
+.saved-plan-card strong,
+.saved-plan-card span,
+.saved-plan-card small {
+  display: block;
+}
+
+.saved-plan-card strong {
+  font-size: 1.05rem;
+}
+
+.saved-plan-card small,
+.saved-plan-card span,
+.empty-state {
+  color: #5f786c;
+}
+
+.saved-plan-meta {
+  gap: 8px;
+  margin-left: auto;
+}
+
+.saved-plan-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e8f3ed;
+  color: #48665a;
+  font-weight: 700;
+}
+
 .device:active {
   cursor: grabbing;
 }

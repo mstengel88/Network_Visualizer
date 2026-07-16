@@ -14,6 +14,15 @@ export type PlanSnapshot = {
   inventory: InventoryState;
 };
 
+export type SavedPlanSummary = {
+  relativePath: string;
+  savedAt: string;
+  businessName: string;
+  siteName: string;
+  rackCount: number;
+  deviceCount: number;
+};
+
 export function createPlanSnapshot(input: {
   inventory: InventoryState;
   businessId: string;
@@ -53,6 +62,44 @@ export async function savePlanSnapshot(snapshot: PlanSnapshot): Promise<string> 
   }
 
   return result.message;
+}
+
+export async function listSavedPlans(): Promise<SavedPlanSummary[]> {
+  const response = await fetch("/api/plans/list", {
+    headers: { Accept: "application/json" },
+  });
+  const result = (await response.json()) as {
+    ok: boolean;
+    message: string;
+    data?: SavedPlanSummary[];
+  };
+
+  if (!response.ok || !result.ok) {
+    throw new Error(result.message || "Could not list saved plans");
+  }
+
+  return result.data ?? [];
+}
+
+export async function loadSavedPlan(relativePath: string): Promise<PlanSnapshot> {
+  const response = await fetch("/api/plans/load", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ relativePath }),
+  });
+  const result = (await response.json()) as { ok: boolean; message: string; data?: unknown };
+
+  if (!response.ok || !result.ok) {
+    throw new Error(result.message || "Could not load saved plan");
+  }
+
+  const snapshot = parsePlanSnapshot(result.data);
+  if (!snapshot) throw new Error("Saved plan is not a valid rack plan");
+
+  return snapshot;
 }
 
 export function downloadPlanSnapshot(snapshot: PlanSnapshot): void {

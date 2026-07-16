@@ -57,8 +57,12 @@ import {
 import {
   createPlanSnapshot,
   downloadPlanSnapshot,
+  listSavedPlans,
+  loadSavedPlan,
   parsePlanSnapshot,
   savePlanSnapshot,
+  type PlanSnapshot,
+  type SavedPlanSummary,
 } from "./planPersistence";
 import type {
   Device,
@@ -132,6 +136,9 @@ function App() {
   const [saveNotice, setSaveNotice] = useState("Plan has not been saved to server yet");
   const [showConnectionPanel, setShowConnectionPanel] = useState(false);
   const [showPortPanel, setShowPortPanel] = useState(false);
+  const [showPlanLibrary, setShowPlanLibrary] = useState(false);
+  const [savedPlans, setSavedPlans] = useState<SavedPlanSummary[]>([]);
+  const [isLoadingPlans, setIsLoadingPlans] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const business = inventory.businesses.find((item) => item.id === businessId) ?? inventory.businesses[0];
@@ -442,6 +449,40 @@ function App() {
     setSaveNotice("Downloaded plan JSON export");
   }
 
+  async function handleOpenSavedPlans() {
+    setShowPlanLibrary(true);
+    setIsLoadingPlans(true);
+    setSaveNotice("Loading saved plans from server...");
+
+    try {
+      const plans = await listSavedPlans();
+      setSavedPlans(plans);
+      setSaveNotice(plans.length ? `Found ${plans.length} saved plan${plans.length === 1 ? "" : "s"}` : "No saved server plans found yet");
+    } catch (error) {
+      setSaveNotice(error instanceof Error ? error.message : "Could not load saved plans");
+    } finally {
+      setIsLoadingPlans(false);
+    }
+  }
+
+  async function handleLoadSavedPlan(plan: SavedPlanSummary) {
+    const confirmed = window.confirm(
+      `Load the saved plan for ${plan.businessName} / ${plan.siteName}? This replaces the current browser project.`,
+    );
+    if (!confirmed) return;
+
+    setIsLoadingPlans(true);
+    try {
+      const snapshot = await loadSavedPlan(plan.relativePath);
+      restorePlanSnapshot(snapshot, plan.relativePath);
+      setShowPlanLibrary(false);
+    } catch (error) {
+      setSaveNotice(error instanceof Error ? error.message : "Could not load saved plan");
+    } finally {
+      setIsLoadingPlans(false);
+    }
+  }
+
   function handleEditLabels() {
     if (!business || !selectedRack) return;
 
@@ -553,34 +594,38 @@ function App() {
       );
       if (!confirmed) return;
 
-      const importedInventory = normalizeShelfPorts(snapshot.inventory);
-      const nextBusinessId = importedInventory.businesses.some((item) => item.id === snapshot.profile.businessId)
-        ? snapshot.profile.businessId
-        : importedInventory.businesses[0]?.id ?? "";
-      const nextRackId = snapshot.profile.rackId && importedInventory.racks.some((rack) => rack.id === snapshot.profile.rackId)
-        ? snapshot.profile.rackId
-        : importedInventory.racks.find((rack) => rack.businessId === nextBusinessId)?.id ?? importedInventory.racks[0]?.id ?? "";
-      const importedPorts = importedInventory.devices.reduce((sum, device) => sum + device.ports.length, 0);
-
-      clearLocalPlanningData();
-      persistInventory(importedInventory);
-      setInventory(importedInventory);
-      setBusinessId(nextBusinessId);
-      setSelectedRackId(nextRackId);
-      setSelectedDeviceId(null);
-      setPendingPortLink(null);
-      setActivePage("rack");
-      setQuery("");
-
-      setImportNotice(
-        `Restored ${importedInventory.racks.length} racks, ${importedInventory.devices.length} devices, and ${importedPorts} ports from ${file.name}`,
-      );
-      setSaveNotice("Restored plan into this browser. Click Save plan to also write a server-side snapshot.");
+      restorePlanSnapshot(snapshot, file.name);
     } catch {
       setImportNotice(`Could not parse ${file.name}. Choose a valid JSON rack-plan export.`);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  function restorePlanSnapshot(snapshot: PlanSnapshot, sourceName: string) {
+    const importedInventory = normalizeShelfPorts(snapshot.inventory);
+    const nextBusinessId = importedInventory.businesses.some((item) => item.id === snapshot.profile.businessId)
+      ? snapshot.profile.businessId
+      : importedInventory.businesses[0]?.id ?? "";
+    const nextRackId = snapshot.profile.rackId && importedInventory.racks.some((rack) => rack.id === snapshot.profile.rackId)
+      ? snapshot.profile.rackId
+      : importedInventory.racks.find((rack) => rack.businessId === nextBusinessId)?.id ?? importedInventory.racks[0]?.id ?? "";
+    const importedPorts = importedInventory.devices.reduce((sum, device) => sum + device.ports.length, 0);
+
+    clearLocalPlanningData();
+    persistInventory(importedInventory);
+    setInventory(importedInventory);
+    setBusinessId(nextBusinessId);
+    setSelectedRackId(nextRackId);
+    setSelectedDeviceId(null);
+    setPendingPortLink(null);
+    setActivePage("rack");
+    setQuery("");
+
+    setImportNotice(
+      `Restored ${importedInventory.racks.length} racks, ${importedInventory.devices.length} devices, and ${importedPorts} ports from ${sourceName}`,
+    );
+    setSaveNotice(`Loaded ${snapshot.profile.businessName} / ${snapshot.profile.siteName} into this browser`);
   }
 
   function handleClearLocalData() {
@@ -705,6 +750,9 @@ function App() {
             <button title="Save plan" aria-label="Save plan" onClick={() => void handleSavePlan()}>
               <Save size={18} />
             </button>
+            <button title="Load saved plan" aria-label="Load saved plan" onClick={() => void handleOpenSavedPlans()}>
+              <DatabaseZap size={18} />
+            </button>
             <button title="Export plan JSON" aria-label="Export plan JSON" onClick={handleExportPlan}>
               <Download size={18} />
             </button>
@@ -800,6 +848,16 @@ function App() {
             onDeleteDevice={handleDeviceDeleted}
             onMoveDevice={handleDeviceMoved}
             onUpdateDevice={handleDeviceUpdated}
+          />
+        </DeviceModal>
+      ) : null}
+      {showPlanLibrary ? (
+        <DeviceModal onClose={() => setShowPlanLibrary(false)}>
+          <SavedPlansPanel
+            isLoading={isLoadingPlans}
+            plans={savedPlans}
+            onLoad={(plan) => void handleLoadSavedPlan(plan)}
+            onRefresh={() => void handleOpenSavedPlans()}
           />
         </DeviceModal>
       ) : null}
@@ -1435,6 +1493,58 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function SavedPlansPanel({
+  isLoading,
+  plans,
+  onLoad,
+  onRefresh,
+}: {
+  isLoading: boolean;
+  plans: SavedPlanSummary[];
+  onLoad: (plan: SavedPlanSummary) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="saved-plans-panel">
+      <div className="modal-heading-row">
+        <div>
+          <p className="eyebrow">Server library</p>
+          <h2>Saved plans on this Pi</h2>
+        </div>
+        <button className="inline-action" disabled={isLoading} onClick={onRefresh}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      {isLoading ? <p className="empty-state">Loading saved plans...</p> : null}
+      {!isLoading && plans.length === 0 ? (
+        <p className="empty-state">No saved plans yet. Click Save plan first, then refresh this list.</p>
+      ) : null}
+
+      <div className="saved-plan-list">
+        {plans.map((plan) => (
+          <article className="saved-plan-card" key={plan.relativePath}>
+            <div>
+              <strong>{plan.businessName}</strong>
+              <span>{plan.siteName}</span>
+              <small>{formatSavedAt(plan.savedAt)}</small>
+            </div>
+            <div className="saved-plan-meta">
+              <span>{plan.rackCount} racks</span>
+              <span>{plan.deviceCount} devices</span>
+            </div>
+            <button className="primary-action" disabled={isLoading} onClick={() => onLoad(plan)}>
+              <DatabaseZap size={16} />
+              Load
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -3449,6 +3559,14 @@ function formatEndpointType(value: string | undefined): string {
 function getEndpointTypeColor(value?: string): string {
   if (!value) return "transparent";
   return endpointTypeOptions.find((option) => option.value === value)?.color ?? "#c8d7d0";
+}
+
+function formatSavedAt(value: string): string {
+  if (!value) return "Unknown save time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString();
 }
 
 export default App;

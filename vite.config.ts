@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import http from "node:http";
 import https from "node:https";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { URL } from "node:url";
 
@@ -117,6 +117,49 @@ export default defineConfig({
             });
           }
         });
+
+        server.middlewares.use("/api/plans/list", async (req, res) => {
+          if (req.method !== "GET") {
+            sendJson(res, 405, { ok: false, message: "Use GET for saved plan lists" });
+            return;
+          }
+
+          try {
+            const plans = await listSavedPlanSnapshots();
+            sendJson(res, 200, {
+              ok: true,
+              message: `Found ${plans.length} saved plans`,
+              data: plans,
+            });
+          } catch (error) {
+            sendJson(res, 500, {
+              ok: false,
+              message: error instanceof Error ? error.message : "Could not list saved plans",
+            });
+          }
+        });
+
+        server.middlewares.use("/api/plans/load", async (req, res) => {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { ok: false, message: "Use POST for saved plan loads" });
+            return;
+          }
+
+          try {
+            const request = await readJsonBody<{ relativePath?: string }>(req);
+            const snapshot = await loadSavedPlanSnapshot(request.relativePath ?? "");
+            sendJson(res, 200, {
+              ok: true,
+              message: "Loaded saved plan",
+              data: snapshot,
+            });
+          } catch (error) {
+            sendJson(res, 500, {
+              ok: false,
+              message: error instanceof Error ? error.message : "Could not load saved plan",
+            });
+          }
+        });
       },
     },
   ],
@@ -171,6 +214,79 @@ async function savePlanSnapshotToDisk(snapshot: {
   return {
     relativePath: path.relative(process.cwd(), filePath),
   };
+}
+
+async function listSavedPlanSnapshots(): Promise<
+  Array<{
+    relativePath: string;
+    savedAt: string;
+    businessName: string;
+    siteName: string;
+    rackCount: number;
+    deviceCount: number;
+  }>
+> {
+  const baseFolder = getPlansFolder();
+  const files = await listJsonFiles(baseFolder);
+  const plans = await Promise.all(
+    files.map(async (filePath) => {
+      try {
+        const snapshot = JSON.parse(await readFile(filePath, "utf8")) as {
+          savedAt?: string;
+          profile?: { businessName?: string; siteName?: string };
+          inventory?: { racks?: unknown[]; devices?: unknown[] };
+        };
+
+        return {
+          relativePath: path.relative(process.cwd(), filePath),
+          savedAt: snapshot.savedAt ?? "",
+          businessName: snapshot.profile?.businessName ?? "Unknown business",
+          siteName: snapshot.profile?.siteName ?? "Unknown site",
+          rackCount: snapshot.inventory?.racks?.length ?? 0,
+          deviceCount: snapshot.inventory?.devices?.length ?? 0,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return plans
+    .filter((plan): plan is NonNullable<typeof plan> => Boolean(plan))
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+async function loadSavedPlanSnapshot(relativePath: string): Promise<unknown> {
+  const baseFolder = getPlansFolder();
+  const requestedPath = path.resolve(process.cwd(), relativePath);
+
+  if (!requestedPath.startsWith(`${baseFolder}${path.sep}`) || !requestedPath.endsWith(".json")) {
+    throw new Error("Saved plan path is not allowed");
+  }
+
+  return JSON.parse(await readFile(requestedPath, "utf8"));
+}
+
+async function listJsonFiles(folder: string): Promise<string[]> {
+  try {
+    const entries = await readdir(folder, { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map(async (entry) => {
+        const entryPath = path.join(folder, entry.name);
+        if (entry.isDirectory()) return listJsonFiles(entryPath);
+        return entry.isFile() && entry.name.endsWith(".json") ? [entryPath] : [];
+      }),
+    );
+
+    return nested.flat();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function getPlansFolder(): string {
+  return path.resolve(process.cwd(), ".data", "plans");
 }
 
 function slugify(value: string): string {
