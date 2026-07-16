@@ -7,6 +7,9 @@ import path from "node:path";
 import { URL } from "node:url";
 
 export default defineConfig({
+  server: {
+    allowedHosts: ["networkrack.ghstickets.com"],
+  },
   plugins: [
     react(),
     {
