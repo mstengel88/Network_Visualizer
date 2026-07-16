@@ -1,0 +1,9 @@
+services:
+  ubiquiti-network-visualizer:
+    build: .
+    container_name: ubiquiti-network-visualizer
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./data:/app/.data
