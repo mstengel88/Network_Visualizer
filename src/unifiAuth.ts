@@ -534,8 +534,7 @@ function buildClientsByMac(clients: unknown[]): Map<string, Record<string, unkno
 
   clients.forEach((client) => {
     const clientObject = asRecord(client);
-    const mac = normalizeMac(getString(clientObject, "mac") || getString(clientObject, "macAddress"));
-    if (mac) clientsByMac.set(mac, clientObject);
+    getMacCandidates(clientObject).forEach((mac) => clientsByMac.set(mac, clientObject));
   });
 
   return clientsByMac;
@@ -553,14 +552,22 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
     const uplinkDeviceInfoSnake = asRecord(clientObject.uplink_device_info);
     const parentDevice = asRecord(clientObject.parentDevice);
     const parentDeviceSnake = asRecord(clientObject.parent_device);
+    const uplinkSource = asRecord(clientObject.uplinkSource);
+    const uplinkSourceSnake = asRecord(clientObject.uplink_source);
+    const lastUplink = asRecord(clientObject.lastUplink);
+    const lastUplinkSnake = asRecord(clientObject.last_uplink);
     const deviceIds = uniqueStrings([
       getString(clientObject, "_id"),
       getString(clientObject, "uplinkDeviceId"),
       getString(clientObject, "uplink_device_id"),
+      getString(clientObject, "uplinkSourceId"),
+      getString(clientObject, "uplink_source_id"),
       getString(clientObject, "uplinkDevice"),
       getString(clientObject, "uplink_device"),
       getString(clientObject, "uplinkDeviceMac"),
       getString(clientObject, "uplink_device_mac"),
+      getString(clientObject, "uplinkSourceMac"),
+      getString(clientObject, "uplink_source_mac"),
       getString(clientObject, "switchMac"),
       getString(clientObject, "switch_mac"),
       getString(clientObject, "sw_mac"),
@@ -589,6 +596,10 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
       ...getDeviceIdentifierCandidates(uplinkDeviceInfoSnake),
       ...getDeviceIdentifierCandidates(parentDevice),
       ...getDeviceIdentifierCandidates(parentDeviceSnake),
+      ...getDeviceIdentifierCandidates(uplinkSource),
+      ...getDeviceIdentifierCandidates(uplinkSourceSnake),
+      ...getDeviceIdentifierCandidates(lastUplink),
+      ...getDeviceIdentifierCandidates(lastUplinkSnake),
     ]);
     const port = getUplinkPortCandidate(clientObject, uplink);
 
@@ -613,9 +624,13 @@ function getDeviceIdentifierCandidates(record: Record<string, unknown>): string[
     getString(record, "id"),
     getString(record, "deviceId"),
     getString(record, "device_id"),
+    getString(record, "deviceMac"),
+    getString(record, "device_mac"),
     getString(record, "mac"),
     getString(record, "macAddress"),
     getString(record, "mac_address"),
+    getString(record, "uplinkMac"),
+    getString(record, "uplink_mac"),
     getString(record, "name"),
     getString(record, "displayName"),
     getString(record, "display_name"),
@@ -639,22 +654,42 @@ function getUplinkPortCandidate(
       getString(clientObject, "sw_port") ||
       getString(clientObject, "switchPort") ||
       getString(clientObject, "switch_port") ||
+      getString(clientObject, "switchPortIdx") ||
+      getString(clientObject, "switch_port_idx") ||
       getString(clientObject, "port") ||
+      getString(clientObject, "portNumber") ||
+      getString(clientObject, "port_number") ||
       getString(clientObject, "portIndex") ||
       getString(clientObject, "port_index") ||
       getString(clientObject, "port_idx") ||
       getString(clientObject, "portIdx") ||
+      getString(clientObject, "uplinkSourcePort") ||
+      getString(clientObject, "uplink_source_port") ||
+      getString(clientObject, "uplinkSourcePortIdx") ||
+      getString(clientObject, "uplink_source_port_idx") ||
+      getString(clientObject, "uplinkSourcePortIndex") ||
+      getString(clientObject, "uplink_source_port_index") ||
       getString(uplink, "remotePort") ||
       getString(uplink, "remote_port") ||
+      getString(uplink, "remotePortIdx") ||
+      getString(uplink, "remote_port_idx") ||
+      getString(uplink, "remotePortIndex") ||
+      getString(uplink, "remote_port_index") ||
       getString(uplink, "portIdx") ||
       getString(uplink, "portIndex") ||
       getString(uplink, "port_index") ||
       getString(uplink, "port") ||
       getString(uplink, "port_idx") ||
+      getString(uplink, "portNumber") ||
+      getString(uplink, "port_number") ||
       getString(uplink, "uplinkPort") ||
       getString(uplink, "uplink_port") ||
       getString(uplink, "uplinkPortIdx") ||
-      getString(uplink, "uplink_port_idx")
+      getString(uplink, "uplink_port_idx") ||
+      getString(uplink, "uplinkSourcePort") ||
+      getString(uplink, "uplink_source_port") ||
+      getString(uplink, "uplinkSourcePortIdx") ||
+      getString(uplink, "uplink_source_port_idx")
   );
 }
 
@@ -666,6 +701,14 @@ function getNestedUplinkEntries(clientObject: Record<string, unknown>): Record<s
     clientObject.uplinks,
     clientObject.uplinkDevices,
     clientObject.uplink_devices,
+    clientObject.uplinkSource,
+    clientObject.uplink_source,
+    clientObject.lastUplink,
+    clientObject.last_uplink,
+    clientObject.wiredUplink,
+    clientObject.wired_uplink,
+    clientObject.parentDevice,
+    clientObject.parent_device,
   ].flatMap((value) => {
     if (Array.isArray(value)) return value.map(asRecord);
     const record = asRecord(value);
@@ -726,6 +769,44 @@ function getPortMacs(port: Record<string, unknown>): string[] {
   return uniqueStrings(directMacs);
 }
 
+function getMacCandidates(record: Record<string, unknown>): string[] {
+  const nestedRecords = [
+    asRecord(record.device),
+    asRecord(record.client),
+    asRecord(record.connectedDevice),
+    asRecord(record.connectedClient),
+    asRecord(record.uplink),
+    asRecord(record.uplinkDevice),
+    asRecord(record.uplink_device),
+  ];
+  const values = [
+    getString(record, "mac"),
+    getString(record, "macAddress"),
+    getString(record, "mac_address"),
+    getString(record, "deviceMac"),
+    getString(record, "device_mac"),
+    getString(record, "wiredMac"),
+    getString(record, "wired_mac"),
+    getString(record, "ethernetMac"),
+    getString(record, "ethernet_mac"),
+    getString(record, "connectedMac"),
+    getString(record, "connected_mac"),
+    getString(record, "apMac"),
+    getString(record, "ap_mac"),
+    getString(record, "cameraMac"),
+    getString(record, "camera_mac"),
+    ...nestedRecords.flatMap((item) => [
+      getString(item, "mac"),
+      getString(item, "macAddress"),
+      getString(item, "mac_address"),
+      getString(item, "deviceMac"),
+      getString(item, "device_mac"),
+    ]),
+  ];
+
+  return uniqueStrings(values.map(normalizeMac).filter(Boolean));
+}
+
 function findClientByPort(
   device: Record<string, unknown>,
   portIndex: string,
@@ -741,6 +822,8 @@ function findClientByPort(
     getString(device, "mac_address"),
     getString(device, "name"),
     getString(device, "displayName"),
+    getString(device, "display_name"),
+    ...getMacCandidates(device),
   ]);
 
   for (const deviceId of deviceIds) {
@@ -853,8 +936,15 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     display,
   );
 
-  return (
+  const candidates = [
     accessEndpointName ||
+      getString(client, "fixedName") ||
+    getString(client, "fixed_name") ||
+    getString(client, "userName") ||
+    getString(client, "user_name") ||
+    getString(client, "uiName") ||
+    getString(client, "ui_name") ||
+    getString(client, "nickname") ||
     getString(client, "name") ||
     getString(client, "display_name") ||
     getString(client, "displayName") ||
@@ -903,7 +993,9 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     getString(door, "displayName") ||
     getString(client, "userFriendlyName") ||
     getString(client, "user_friendly_name")
-  );
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => !isGenericManagedEndpointName(candidate)) || candidates[0] || "";
 }
 
 function getPreferredAccessEndpointName(...sources: Array<Record<string, unknown> | undefined>): string {
@@ -1178,9 +1270,51 @@ function isGenericAccessDisplayName(value: string): boolean {
   return genericNames.has(normalized) || genericNames.has(compact);
 }
 
+function isGenericManagedEndpointName(value: string): boolean {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .replace(/[^a-z0-9+ ]/g, "")
+    .trim();
+  const compact = normalized.replace(/\s+/g, "");
+
+  return (
+    isGenericAccessDisplayName(value) ||
+    [
+      "access point",
+      "ap",
+      "camera",
+      "protect camera",
+      "unifi camera",
+      "u6+",
+      "u6 plus",
+      "u6plus",
+      "u7 pro",
+      "u7 pro outdoor",
+      "u7pro",
+      "u7prooutdoor",
+      "ua ultra",
+      "uaultra",
+      "ua hub door mini",
+      "uahubdoormini",
+    ].includes(normalized) ||
+    [
+      "accesspoint",
+      "protectcamera",
+      "unificamera",
+      "u6plus",
+      "u7pro",
+      "u7prooutdoor",
+      "uaultra",
+      "uahubdoormini",
+    ].includes(compact)
+  );
+}
+
 function getClientMac(client: Record<string, unknown> | undefined): string {
   if (!client) return "";
-  return getString(client, "mac") || getString(client, "macAddress") || getString(client, "mac_address");
+  return getMacCandidates(client)[0] || "";
 }
 
 function getClientIp(client: Record<string, unknown> | undefined): string {
