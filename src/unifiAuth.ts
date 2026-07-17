@@ -850,6 +850,7 @@ function getPortEndpointName(
   const reader = asRecord(port.reader);
   const lldp = asRecord(port.lldp);
   const macEntry = asRecord(Array.isArray(port.mac_table) ? port.mac_table[0] : undefined);
+  const hasEndpointEvidence = hasPortEndpointEvidence(port, client, macs, state);
   const accessEndpointName = getPreferredAccessEndpointName(
     port,
     client,
@@ -864,30 +865,11 @@ function getPortEndpointName(
   );
 
   return (
-    accessEndpointName ||
     getClientName(client) ||
-    getString(port, "uaHubName") ||
-    getString(port, "ua_hub_name") ||
-    getString(port, "accessHubName") ||
-    getString(port, "access_hub_name") ||
-    getString(port, "accessDeviceName") ||
-    getString(port, "access_device_name") ||
-    getString(port, "readerName") ||
-    getString(port, "reader_name") ||
-    getString(port, "doorName") ||
-    getString(port, "door_name") ||
-    getString(port, "connectedTo") ||
-    getString(port, "connected_to") ||
-    getString(port, "connectedDeviceName") ||
-    getString(port, "connected_device_name") ||
-    getString(port, "clientName") ||
-    getString(port, "client_name") ||
-    getString(port, "hostname") ||
     getString(connectedDevice, "name") ||
     getString(connectedDevice, "hostname") ||
     getString(connectedClient, "name") ||
     getString(connectedClient, "hostname") ||
-    getAccessEndpointName(port) ||
     getString(accessHub, "name") ||
     getString(accessHub, "displayName") ||
     getString(accessHub, "display_name") ||
@@ -908,10 +890,56 @@ function getPortEndpointName(
     getString(lldp, "system_name") ||
     getString(macEntry, "name") ||
     getString(macEntry, "hostname") ||
-    getConfiguredPortEndpointName(port, state) ||
+    (hasEndpointEvidence
+      ? accessEndpointName ||
+        getString(port, "uaHubName") ||
+        getString(port, "ua_hub_name") ||
+        getString(port, "accessHubName") ||
+        getString(port, "access_hub_name") ||
+        getString(port, "accessDeviceName") ||
+        getString(port, "access_device_name") ||
+        getString(port, "readerName") ||
+        getString(port, "reader_name") ||
+        getString(port, "doorName") ||
+        getString(port, "door_name") ||
+        getString(port, "connectedTo") ||
+        getString(port, "connected_to") ||
+        getString(port, "connectedDeviceName") ||
+        getString(port, "connected_device_name") ||
+        getString(port, "clientName") ||
+        getString(port, "client_name") ||
+        getString(port, "hostname") ||
+        getAccessEndpointName(port) ||
+        getConfiguredPortEndpointName(port, state)
+      : "") ||
     macs[0] ||
     formatUnknownPortEndpoint(state)
   );
+}
+
+function hasPortEndpointEvidence(
+  port: Record<string, unknown>,
+  client: Record<string, unknown> | undefined,
+  macs: string[],
+  state: string,
+): boolean {
+  if (client || macs.length > 0) return true;
+  if (!isPortActiveState(state)) return false;
+
+  const evidenceRecords = [
+    asRecord(port.connectedDevice),
+    asRecord(port.connectedClient),
+    asRecord(port.lldp),
+    asRecord(port.access),
+    asRecord(port.accessDevice),
+    asRecord(port.accessHub),
+    asRecord(port.uaHub),
+    asRecord(port.door),
+    asRecord(port.reader),
+  ];
+  if (evidenceRecords.some((record) => Object.keys(record).length > 0)) return true;
+
+  return hasActivePoeDraw(port) || hasActiveLinkSpeed(port);
 }
 
 function getConfiguredPortEndpointName(port: Record<string, unknown>, state: string): string {
@@ -934,6 +962,41 @@ function getConfiguredPortEndpointName(port: Record<string, unknown>, state: str
 function isPortActiveState(state: string): boolean {
   const normalized = state.toLowerCase();
   return Boolean(normalized) && !normalized.includes("down") && !normalized.includes("disabled");
+}
+
+function hasActivePoeDraw(port: Record<string, unknown>): boolean {
+  const poe = asRecord(port.poe);
+  const values = [
+    getString(port, "poe_power"),
+    getString(port, "poePower"),
+    getString(port, "poe_power_mw"),
+    getString(port, "poePowerMw"),
+    getString(port, "power"),
+    getString(port, "powerDraw"),
+    getString(port, "power_draw"),
+    getString(poe, "power"),
+    getString(poe, "powerDraw"),
+    getString(poe, "power_draw"),
+    getString(poe, "powerMw"),
+    getString(poe, "power_mw"),
+  ];
+
+  return values.some((value) => Number(value) > 0);
+}
+
+function hasActiveLinkSpeed(port: Record<string, unknown>): boolean {
+  const values = [
+    getString(port, "speed"),
+    getString(port, "speedMbps"),
+    getString(port, "speed_mbps"),
+    getString(port, "linkSpeed"),
+    getString(port, "link_speed"),
+  ];
+
+  return values.some((value) => {
+    const speed = Number(value);
+    return Number.isFinite(speed) && speed > 0;
+  });
 }
 
 function isGenericPortName(value: string): boolean {
