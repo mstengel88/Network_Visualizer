@@ -3927,7 +3927,15 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
       });
-      const result = await readDoorAccessResponse(response);
+      let result = await readDoorAccessResponse(response);
+      if (isMissingDoorAccessRoute(result.message)) {
+        const fallbackResponse = await fetch("/api/access-buzz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
+        });
+        result = await readDoorAccessResponse(fallbackResponse);
+      }
 
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Door buzz request failed");
@@ -3950,7 +3958,15 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const result = await readDoorAccessResponse<AccessDoorApiTarget[]>(response);
+      let result = await readDoorAccessResponse<AccessDoorApiTarget[]>(response);
+      if (isMissingDoorAccessRoute(result.message)) {
+        const fallbackResponse = await fetch("/api/access-doors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        result = await readDoorAccessResponse<AccessDoorApiTarget[]>(fallbackResponse);
+      }
 
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Could not load UniFi Access doors");
@@ -4096,6 +4112,10 @@ async function readDoorAccessResponse<T = unknown>(
   }
 
   return response.json() as Promise<{ ok: boolean; message: string; data?: T }>;
+}
+
+function isMissingDoorAccessRoute(message: string): boolean {
+  return message.includes("returned the app page instead of JSON");
 }
 
 function mapAccessDoorToTarget(door: AccessDoorApiTarget): DoorAccessTarget {

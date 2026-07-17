@@ -357,6 +357,27 @@ function registerAccessRoutes(middlewares: {
   });
 
   middlewares.use("/api/access/doors", async (req, res) => {
+    await handleAccessDoorsRequest(req, res, accessSessions);
+  });
+
+  middlewares.use("/api/access-doors", async (req, res) => {
+    await handleAccessDoorsRequest(req, res, accessSessions);
+  });
+
+  middlewares.use("/api/access/buzz", async (req, res) => {
+    await handleAccessBuzzRequest(req, res, accessSessions);
+  });
+
+  middlewares.use("/api/access-buzz", async (req, res) => {
+    await handleAccessBuzzRequest(req, res, accessSessions);
+  });
+}
+
+async function handleAccessDoorsRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  accessSessions: Map<string, number>,
+) {
     if (req.method !== "POST") {
       sendJson(res, 405, { ok: false, message: "Use POST for door access door lists" });
       return;
@@ -404,9 +425,13 @@ function registerAccessRoutes(middlewares: {
         message: error instanceof Error ? error.message : "Could not load UniFi Access doors",
       });
     }
-  });
+}
 
-  middlewares.use("/api/access/buzz", async (req, res) => {
+async function handleAccessBuzzRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  accessSessions: Map<string, number>,
+) {
     if (req.method !== "POST") {
       sendJson(res, 405, { ok: false, message: "Use POST for door buzz actions" });
       return;
@@ -452,7 +477,6 @@ function registerAccessRoutes(middlewares: {
         message: error instanceof Error ? error.message : "Could not run door buzz action",
       });
     }
-  });
 }
 
 function sendJson(
