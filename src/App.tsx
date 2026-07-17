@@ -3899,7 +3899,7 @@ function DoorAccessPage({
 
       setSessionToken(result.data.token);
       setPassword("");
-      setNotice("Door access controls are unlocked. Loading UniFi Access doors...");
+      setNotice("Door access controls are unlocked. Loading UniFi Access doors through /api/access-doors...");
     } catch (error) {
       setSessionToken("");
       setNotice(error instanceof Error ? error.message : "Door access login failed");
@@ -3922,14 +3922,14 @@ function DoorAccessPage({
     setNotice(`Sending buzz request for ${target.name}...`);
 
     try {
-      const response = await fetch("/api/access/buzz", {
+      const response = await fetch("/api/access-buzz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
       });
       let result = await readDoorAccessResponse(response);
       if (isMissingDoorAccessRoute(result.message)) {
-        const fallbackResponse = await fetch("/api/access-buzz", {
+        const fallbackResponse = await fetch("/api/access/buzz", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
@@ -3953,14 +3953,14 @@ function DoorAccessPage({
     setIsBusy(true);
 
     try {
-      const response = await fetch("/api/access/doors", {
+      const response = await fetch("/api/access-doors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
       let result = await readDoorAccessResponse<AccessDoorApiTarget[]>(response);
       if (isMissingDoorAccessRoute(result.message)) {
-        const fallbackResponse = await fetch("/api/access-doors", {
+        const fallbackResponse = await fetch("/api/access/doors", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
