@@ -908,8 +908,42 @@ function getPortEndpointName(
     getString(lldp, "system_name") ||
     getString(macEntry, "name") ||
     getString(macEntry, "hostname") ||
+    getConfiguredPortEndpointName(port, state) ||
     macs[0] ||
     formatUnknownPortEndpoint(state)
+  );
+}
+
+function getConfiguredPortEndpointName(port: Record<string, unknown>, state: string): string {
+  if (!isPortActiveState(state)) return "";
+
+  const candidates = [
+    getString(port, "name"),
+    getString(port, "portName"),
+    getString(port, "port_name"),
+    getString(port, "label"),
+    getString(port, "alias"),
+    getString(port, "description"),
+    getString(port, "comment"),
+    getString(port, "notes"),
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => !isGenericPortName(candidate)) || "";
+}
+
+function isPortActiveState(state: string): boolean {
+  const normalized = state.toLowerCase();
+  return Boolean(normalized) && !normalized.includes("down") && !normalized.includes("disabled");
+}
+
+function isGenericPortName(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    !normalized ||
+    /^port\s*\d+$/.test(normalized) ||
+    /^\d+$/.test(normalized) ||
+    /^sfp\+?\s*\d*$/.test(normalized) ||
+    ["lan", "wan", "uplink", "downlink", "mgmt", "management"].includes(normalized)
   );
 }
 

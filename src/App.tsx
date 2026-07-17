@@ -1003,7 +1003,7 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
     return {
       ...syncedPort,
       label: existingPort.label || syncedPort.label,
-      connectedTo: getUsefulSyncedEndpointName(syncedPort) ?? existingPort.connectedTo ?? syncedPort.connectedTo,
+      connectedTo: getResolvedSyncedConnectedTo(existingPort, syncedPort),
       patchConnection: existingPort.patchConnection || syncedPort.patchConnection,
       wireUse: existingPort.wireUse ?? syncedPort.wireUse,
       wireColor: existingPort.wireColor ?? syncedPort.wireColor,
@@ -1012,7 +1012,7 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
       endpointOwner: existingPort.endpointOwner ?? syncedPort.endpointOwner,
       endpointNotes: existingPort.endpointNotes ?? syncedPort.endpointNotes,
       importedEndpointName:
-        getUsefulSyncedEndpointName(syncedPort) ?? existingPort.importedEndpointName,
+        getResolvedSyncedImportedEndpointName(existingPort, syncedPort),
     };
   });
   const existingOnlyPorts = existingPorts.filter((port) => !syncedNumbers.has(getPortSortNumber(port)));
@@ -1023,6 +1023,27 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
 function getUsefulSyncedEndpointName(port: Device["ports"][number]): string | undefined {
   const candidates = [port.importedEndpointName, port.connectedTo].filter(Boolean);
   return candidates.find((candidate) => !isGenericLinkEndpoint(candidate));
+}
+
+function getResolvedSyncedConnectedTo(
+  existingPort: Device["ports"][number],
+  syncedPort: Device["ports"][number],
+): string | undefined {
+  if (isOpenSyncedPort(syncedPort)) return syncedPort.connectedTo || "Open";
+  return getUsefulSyncedEndpointName(syncedPort) ?? existingPort.connectedTo ?? syncedPort.connectedTo;
+}
+
+function getResolvedSyncedImportedEndpointName(
+  existingPort: Device["ports"][number],
+  syncedPort: Device["ports"][number],
+): string | undefined {
+  if (isOpenSyncedPort(syncedPort)) return syncedPort.importedEndpointName || syncedPort.connectedTo || "Open";
+  return getUsefulSyncedEndpointName(syncedPort) ?? existingPort.importedEndpointName;
+}
+
+function isOpenSyncedPort(port: Device["ports"][number]): boolean {
+  const value = `${port.connectedTo ?? ""} ${port.importedEndpointName ?? ""} ${port.speed ?? ""}`.toLowerCase();
+  return value.includes("open") || value.includes("down");
 }
 
 function isGenericLinkEndpoint(value: string | undefined): boolean {
