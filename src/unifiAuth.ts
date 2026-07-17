@@ -202,6 +202,9 @@ function mapCloudInventory(data: {
   const rackDeviceRecords = importedDeviceRecords.filter((device) =>
     isRackDeviceRecord(asRecord(device)),
   );
+  const endpointDeviceRecords = importedDeviceRecords.filter((device) =>
+    !isRackDeviceRecord(asRecord(device)),
+  );
   const endpointRecords = [
     ...(data.legacyClients ?? []),
     ...(data.clients ?? []),
@@ -212,7 +215,10 @@ function mapCloudInventory(data: {
     ...(data.clients ?? []),
   ];
   const clientsByMac = buildClientsByMac(endpointRecords);
-  const clientsByPort = buildClientsByPort(portEndpointRecords);
+  const clientsByPort = mergeMissingEndpointRecords(
+    buildClientsByPort(portEndpointRecords),
+    buildClientsByPort(endpointDeviceRecords),
+  );
   const devices = rackDeviceRecords.map((device, index) => {
     const deviceObject = asRecord(device);
     const rackId = findRackIdForDevice(deviceObject, rackAliases) ?? unmatchedRack.id;
@@ -694,6 +700,17 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
   return clientsByPort;
 }
 
+function mergeMissingEndpointRecords(
+  primaryMap: Map<string, Record<string, unknown>>,
+  fallbackMap: Map<string, Record<string, unknown>>,
+): Map<string, Record<string, unknown>> {
+  fallbackMap.forEach((record, key) => {
+    if (!primaryMap.has(key)) primaryMap.set(key, record);
+  });
+
+  return primaryMap;
+}
+
 function setPreferredEndpointRecord(
   endpointMap: Map<string, Record<string, unknown>>,
   key: string,
@@ -1123,6 +1140,7 @@ function isGenericPortName(value: string): boolean {
 
 function getClientName(client: Record<string, unknown> | undefined): string {
   if (!client) return "";
+  const ucoreDevice = asRecord(client.unifi_device_info_from_ucore);
   const user = asRecord(client.user);
   const device = asRecord(client.device);
   const display = asRecord(client.display);
@@ -1153,6 +1171,9 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     getString(client, "uiName") ||
     getString(client, "ui_name") ||
     getString(client, "nickname") ||
+    getString(ucoreDevice, "name") ||
+    getString(ucoreDevice, "displayName") ||
+    getString(ucoreDevice, "display_name") ||
     getString(client, "name") ||
     getString(client, "display_name") ||
     getString(client, "displayName") ||
@@ -1183,6 +1204,9 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     getString(device, "displayName") ||
     getString(display, "name") ||
     getString(display, "label") ||
+    getString(ucoreDevice, "computed_model") ||
+    getString(ucoreDevice, "product_model") ||
+    getString(ucoreDevice, "product_shortname") ||
     getString(accessHub, "name") ||
     getString(accessHub, "displayName") ||
     getString(accessHub, "display_name") ||
@@ -1531,6 +1555,7 @@ function getClientIp(client: Record<string, unknown> | undefined): string {
 }
 
 function inferEndpointType(name: string, source: Record<string, unknown>): string {
+  const ucoreDevice = asRecord(source.unifi_device_info_from_ucore);
   const value = [
     name,
     getString(source, "type"),
@@ -1544,6 +1569,11 @@ function inferEndpointType(name: string, source: Record<string, unknown>): strin
     getString(source, "readerName"),
     getString(source, "doorName"),
     getAccessEndpointName(source),
+    getString(ucoreDevice, "name"),
+    getString(ucoreDevice, "product_line"),
+    getString(ucoreDevice, "computed_model"),
+    getString(ucoreDevice, "product_model"),
+    getString(ucoreDevice, "product_shortname"),
   ]
     .join(" ")
     .toLowerCase();
@@ -1555,7 +1585,10 @@ function inferEndpointType(name: string, source: Record<string, unknown>): strin
     value.includes("ua-reader") ||
     value.includes("ua reader") ||
     value.includes("g2 reader") ||
-    value.includes("door access")
+    value.includes("door access") ||
+    value.includes("access ultra") ||
+    value.includes("ua ultra") ||
+    value.includes("product_line access")
   ) {
     return "door-reader";
   }

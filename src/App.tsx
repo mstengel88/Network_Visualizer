@@ -1452,6 +1452,11 @@ function formatConnectionLabel(value: string | undefined): string {
 
 function getPortEndpointDisplay(port: Device["ports"][number]): string {
   const connectedTo = getConnectedEndpointDisplay(port);
+  const rawConnectedTo = formatConnectionLabel(port.connectedTo);
+  const rawImportedEndpoint = formatConnectionLabel(port.importedEndpointName);
+  if (!connectedTo && !isUsableEndpointLabel(rawConnectedTo) && !isUsableEndpointLabel(rawImportedEndpoint)) {
+    return "";
+  }
   const endpoint =
     connectedTo
       ? connectedTo
@@ -3015,6 +3020,9 @@ function getFaceplatePortClass(port: Device["ports"][number], device?: Device): 
   const expectedPortCount = device ? inferExpectedPortCount(device) : 0;
   if (getPortPatchLink(port) && device?.type === "patch" && !isFastEthernetPort(port) && !isGigabitEthernetPort(port)) {
     return "port-patch-linked";
+  }
+  if (!isUsableEndpointLabel(formatConnectionLabel(port.connectedTo)) && !isUsableEndpointLabel(formatConnectionLabel(port.importedEndpointName))) {
+    return "port-open";
   }
   if (value.includes("down")) return "port-open";
   if (isSfpPortForLayout(port, device) || (value.includes("10g") && expectedPortCount <= 48)) {
