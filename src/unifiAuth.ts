@@ -547,6 +547,12 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
   clients.forEach((client) => {
     const clientObject = asRecord(client);
     const uplink = asRecord(clientObject.uplink);
+    const uplinkDevice = asRecord(clientObject.uplinkDevice);
+    const uplinkDeviceSnake = asRecord(clientObject.uplink_device);
+    const uplinkDeviceInfo = asRecord(clientObject.uplinkDeviceInfo);
+    const uplinkDeviceInfoSnake = asRecord(clientObject.uplink_device_info);
+    const parentDevice = asRecord(clientObject.parentDevice);
+    const parentDeviceSnake = asRecord(clientObject.parent_device);
     const deviceIds = uniqueStrings([
       getString(clientObject, "_id"),
       getString(clientObject, "uplinkDeviceId"),
@@ -572,11 +578,56 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
       getString(uplink, "name"),
       getString(uplink, "deviceName"),
       getString(uplink, "device_name"),
+      getString(uplink, "displayName"),
+      getString(uplink, "display_name"),
       getString(uplink, "mac"),
       getString(uplink, "macAddress"),
       getString(uplink, "mac_address"),
+      ...getDeviceIdentifierCandidates(uplinkDevice),
+      ...getDeviceIdentifierCandidates(uplinkDeviceSnake),
+      ...getDeviceIdentifierCandidates(uplinkDeviceInfo),
+      ...getDeviceIdentifierCandidates(uplinkDeviceInfoSnake),
+      ...getDeviceIdentifierCandidates(parentDevice),
+      ...getDeviceIdentifierCandidates(parentDeviceSnake),
     ]);
-    const port =
+    const port = getUplinkPortCandidate(clientObject, uplink);
+
+    if (port) {
+      deviceIds.forEach((deviceId) => clientsByPort.set(makePortClientKey(deviceId, port), clientObject));
+    }
+
+    getNestedUplinkEntries(clientObject).forEach((entry) => {
+      const entryDeviceIds = uniqueStrings([...deviceIds, ...getDeviceIdentifierCandidates(entry)]);
+      const entryPort = getUplinkPortCandidate(entry, asRecord(entry.uplink));
+      if (!entryPort) return;
+      entryDeviceIds.forEach((deviceId) => clientsByPort.set(makePortClientKey(deviceId, entryPort), clientObject));
+    });
+  });
+
+  return clientsByPort;
+}
+
+function getDeviceIdentifierCandidates(record: Record<string, unknown>): string[] {
+  return [
+    getString(record, "_id"),
+    getString(record, "id"),
+    getString(record, "deviceId"),
+    getString(record, "device_id"),
+    getString(record, "mac"),
+    getString(record, "macAddress"),
+    getString(record, "mac_address"),
+    getString(record, "name"),
+    getString(record, "displayName"),
+    getString(record, "display_name"),
+    getString(record, "hostname"),
+  ].filter(Boolean);
+}
+
+function getUplinkPortCandidate(
+  clientObject: Record<string, unknown>,
+  uplink: Record<string, unknown>,
+): string {
+  return (
       getString(clientObject, "uplinkRemotePort") ||
       getString(clientObject, "uplink_remote_port") ||
       getString(clientObject, "uplinkPort") ||
@@ -599,13 +650,27 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
       getString(uplink, "portIndex") ||
       getString(uplink, "port_index") ||
       getString(uplink, "port") ||
-      getString(uplink, "port_idx");
+      getString(uplink, "port_idx") ||
+      getString(uplink, "uplinkPort") ||
+      getString(uplink, "uplink_port") ||
+      getString(uplink, "uplinkPortIdx") ||
+      getString(uplink, "uplink_port_idx")
+  );
+}
 
-    if (!port) return;
-    deviceIds.forEach((deviceId) => clientsByPort.set(makePortClientKey(deviceId, port), clientObject));
+function getNestedUplinkEntries(clientObject: Record<string, unknown>): Record<string, unknown>[] {
+  return [
+    clientObject.uplink,
+    clientObject.uplinkTable,
+    clientObject.uplink_table,
+    clientObject.uplinks,
+    clientObject.uplinkDevices,
+    clientObject.uplink_devices,
+  ].flatMap((value) => {
+    if (Array.isArray(value)) return value.map(asRecord);
+    const record = asRecord(value);
+    return Object.keys(record).length ? [record] : [];
   });
-
-  return clientsByPort;
 }
 
 function getPortState(port: Record<string, unknown>): string {

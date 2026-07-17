@@ -940,7 +940,7 @@ function mergeSyncedInventoryIntoCurrentPlan(
 
   return {
     ...currentInventory,
-    devices: nextDevices,
+    devices: refreshPatchPortsFromLinkedTargets(nextDevices),
     connections: currentInventory.connections,
   };
 }
@@ -1003,6 +1003,7 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
     return {
       ...syncedPort,
       label: existingPort.label || syncedPort.label,
+      connectedTo: getUsefulSyncedEndpointName(syncedPort) ?? existingPort.connectedTo ?? syncedPort.connectedTo,
       patchConnection: existingPort.patchConnection || syncedPort.patchConnection,
       wireUse: existingPort.wireUse ?? syncedPort.wireUse,
       wireColor: existingPort.wireColor ?? syncedPort.wireColor,
@@ -1011,12 +1012,29 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
       endpointOwner: existingPort.endpointOwner ?? syncedPort.endpointOwner,
       endpointNotes: existingPort.endpointNotes ?? syncedPort.endpointNotes,
       importedEndpointName:
-        syncedPort.importedEndpointName ?? syncedPort.connectedTo ?? existingPort.importedEndpointName,
+        getUsefulSyncedEndpointName(syncedPort) ?? existingPort.importedEndpointName,
     };
   });
   const existingOnlyPorts = existingPorts.filter((port) => !syncedNumbers.has(getPortSortNumber(port)));
 
   return [...mergedPorts, ...existingOnlyPorts];
+}
+
+function getUsefulSyncedEndpointName(port: Device["ports"][number]): string | undefined {
+  const candidates = [port.importedEndpointName, port.connectedTo].filter(Boolean);
+  return candidates.find((candidate) => !isGenericLinkEndpoint(candidate));
+}
+
+function isGenericLinkEndpoint(value: string | undefined): boolean {
+  if (!value) return true;
+  const normalized = value.toLowerCase();
+  return (
+    normalized === "open" ||
+    normalized === "unknown" ||
+    normalized === "down" ||
+    normalized.includes("no client reported") ||
+    normalized === "link up"
+  );
 }
 
 function isRackNetworkDevice(device: Device): boolean {
@@ -1025,6 +1043,46 @@ function isRackNetworkDevice(device: Device): boolean {
 
 function normalizeMatchText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function refreshPatchPortsFromLinkedTargets(devices: Device[]): Device[] {
+  return devices.map((device) => {
+    if (device.type !== "patch") return device;
+
+    let changed = false;
+    const ports = device.ports.map((port) => {
+      const patchLink = getPortPatchLink(port);
+      if (!patchLink) return port;
+
+      const target = findPortTarget(patchLink, devices, device.id);
+      if (!target?.port) return port;
+
+      const refreshedPort = enrichPatchPortFromTarget(port, target.port, target.device);
+      if (patchPortEndpointChanged(port, refreshedPort)) changed = true;
+      return refreshedPort;
+    });
+
+    return changed ? { ...device, ports } : device;
+  });
+}
+
+function patchPortEndpointChanged(
+  previousPort: Device["ports"][number],
+  nextPort: Device["ports"][number],
+): boolean {
+  return (
+    previousPort.connectedTo !== nextPort.connectedTo ||
+    previousPort.importedEndpointName !== nextPort.importedEndpointName ||
+    previousPort.connectedMac !== nextPort.connectedMac ||
+    previousPort.connectedIp !== nextPort.connectedIp ||
+    previousPort.endpointType !== nextPort.endpointType ||
+    previousPort.endpointLocation !== nextPort.endpointLocation ||
+    previousPort.endpointOwner !== nextPort.endpointOwner ||
+    previousPort.endpointVendor !== nextPort.endpointVendor ||
+    previousPort.endpointNotes !== nextPort.endpointNotes ||
+    previousPort.speed !== nextPort.speed ||
+    previousPort.vlan !== nextPort.vlan
+  );
 }
 
 function persistInventory(inventory: InventoryState): void {
@@ -1266,7 +1324,7 @@ function enrichPatchPortFromTarget(
   return {
     ...patchPort,
     connectedTo,
-    importedEndpointName: targetPort.importedEndpointName || targetPort.connectedTo || patchPort.importedEndpointName,
+    importedEndpointName: connectedTo || targetPort.importedEndpointName || targetPort.connectedTo || patchPort.importedEndpointName,
     connectedMac: targetPort.connectedMac ?? patchPort.connectedMac,
     connectedIp: targetPort.connectedIp ?? patchPort.connectedIp,
     endpointType: targetPort.endpointType ?? patchPort.endpointType,
