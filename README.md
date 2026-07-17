@@ -35,6 +35,7 @@ Log out and back in so the Docker group change applies, then clone and run:
 ```sh
 git clone https://github.com/YOUR-USERNAME/YOUR-REPO.git
 cd YOUR-REPO
+printf 'DOOR_ACCESS_PASSWORD=change-this-door-password\n' > .env
 docker compose up -d --build
 ```
 
@@ -58,6 +59,16 @@ docker compose up -d --build
 ```
 
 Plan snapshots saved from the app are stored on the Pi in `./data/plans`.
+
+## Door access page
+
+The **Doors** page is password protected by the server. Set `DOOR_ACCESS_PASSWORD` in the Pi `.env` file before starting Docker:
+
+```sh
+DOOR_ACCESS_PASSWORD=your-strong-password-here
+```
+
+The page can find door-reader and card-terminal endpoints from the current rack data and show quick buzz controls. The buzz action is intentionally protected behind `/api/access/buzz`; wire that backend route to a verified UniFi Access unlock endpoint before using it to open doors.
 
 ## Move your current rack plan to the Pi
 

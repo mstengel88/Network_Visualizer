@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { CSSProperties, FormEvent, ReactNode, RefObject } from "react";
 import {
   Activity,
   Cable,
@@ -119,7 +119,7 @@ type PendingPortLink = {
   portId: string;
 };
 
-type ActivePage = "rack" | "reports";
+type ActivePage = "rack" | "reports" | "access";
 
 function App() {
   const [inventory, setInventory] = useState<InventoryState>(() => initialInventory);
@@ -726,6 +726,14 @@ function App() {
             <Printer size={16} />
             Reports
           </button>
+          <button
+            className={activePage === "access" ? "page-tab active" : "page-tab"}
+            type="button"
+            onClick={() => setActivePage("access")}
+          >
+            <LockKeyhole size={16} />
+            Doors
+          </button>
         </nav>
 
         <nav className="rack-list" aria-label="Racks">
@@ -765,7 +773,13 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">{business.name}</p>
-            <h1>{activePage === "reports" ? "Reports" : "Network rack visualizer"}</h1>
+            <h1>
+              {activePage === "reports"
+                ? "Reports"
+                : activePage === "access"
+                  ? "Door access"
+                  : "Network rack visualizer"}
+            </h1>
           </div>
           <div className="toolbar" aria-label="Workspace tools">
             <button title="Filter view" aria-label="Filter view">
@@ -795,6 +809,8 @@ function App() {
 
         {activePage === "reports" ? (
           <ReportsPage businessName={business.name} devices={inventory.devices} racks={visibleRacks} />
+        ) : activePage === "access" ? (
+          <DoorAccessPage businessName={business.name} devices={inventory.devices} racks={visibleRacks} />
         ) : (
           <>
             <section className="metrics" aria-label="Network overview">
@@ -1049,7 +1065,15 @@ function getResolvedSyncedConnectedTo(
   syncedPort: Device["ports"][number],
 ): string | undefined {
   if (isOpenSyncedPort(syncedPort)) return "Open";
-  return getUsefulSyncedEndpointName(syncedPort) ?? existingPort.connectedTo ?? syncedPort.connectedTo;
+  const syncedEndpoint = getUsefulSyncedEndpointName(syncedPort);
+  const existingEndpoint = existingPort.connectedTo;
+  if (
+    syncedEndpoint &&
+    (!existingEndpoint || isGenericEndpointName(existingEndpoint) || existingEndpoint === existingPort.importedEndpointName)
+  ) {
+    return syncedEndpoint;
+  }
+  return existingEndpoint ?? syncedEndpoint ?? syncedPort.connectedTo;
 }
 
 function getResolvedSyncedImportedEndpointName(
@@ -1528,6 +1552,35 @@ function isGenericAccessEndpointName(value: string): boolean {
   ]);
 
   return genericNames.has(normalized) || genericNames.has(compact);
+}
+
+function isGenericEndpointName(value: string): boolean {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .replace(/[^a-z0-9+ ]/g, "")
+    .trim();
+  const compact = normalized.replace(/\s+/g, "");
+  const cameraModels = [
+    "g3",
+    "g4",
+    "g5",
+    "g6",
+    "camera g3",
+    "camera g4",
+    "camera g5",
+    "camera g6",
+    "g5 turret ultra",
+    "camera g5 turret ultra",
+    "uvc g5 turret ultra black",
+  ];
+
+  return (
+    isGenericAccessEndpointName(value) ||
+    cameraModels.includes(normalized) ||
+    cameraModels.map((item) => item.replace(/\s+/g, "")).includes(compact)
+  );
 }
 
 function compactEndpointLabel(value: string): string {
@@ -3778,6 +3831,206 @@ function ReportsPage({
       ) : null}
     </section>
   );
+}
+
+type DoorAccessTarget = {
+  id: string;
+  name: string;
+  type: string;
+  rackName: string;
+  deviceName: string;
+  portLabel: string;
+  ip: string;
+  mac: string;
+};
+
+function DoorAccessPage({
+  businessName,
+  devices,
+  racks,
+}: {
+  businessName: string;
+  devices: Device[];
+  racks: RackType[];
+}) {
+  const [password, setPassword] = useState("");
+  const [sessionToken, setSessionToken] = useState("");
+  const [notice, setNotice] = useState("Enter the door access password to show buzz controls.");
+  const [isBusy, setIsBusy] = useState(false);
+  const targets = useMemo(() => getDoorAccessTargets(devices, racks), [devices, racks]);
+
+  async function handleUnlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    setNotice("Checking door access password...");
+
+    try {
+      const response = await fetch("/api/access/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const result = await response.json() as { ok: boolean; message: string; data?: { token?: string } };
+
+      if (!response.ok || !result.ok || !result.data?.token) {
+        throw new Error(result.message || "Door access login failed");
+      }
+
+      setSessionToken(result.data.token);
+      setPassword("");
+      setNotice("Door access controls are unlocked for this browser session.");
+    } catch (error) {
+      setSessionToken("");
+      setNotice(error instanceof Error ? error.message : "Door access login failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBuzz(target: DoorAccessTarget) {
+    if (!sessionToken) return;
+    const confirmed = window.confirm(`Buzz ${target.name}?`);
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    setNotice(`Sending buzz request for ${target.name}...`);
+
+    try {
+      const response = await fetch("/api/access/buzz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
+      });
+      const result = await response.json() as { ok: boolean; message: string };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "Door buzz request failed");
+      }
+
+      setNotice(result.message);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Door buzz request failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="door-access-page" aria-label="Door access controls">
+      <div className="door-access-hero">
+        <div>
+          <p className="eyebrow">{businessName}</p>
+          <h2>Door buzz controls</h2>
+          <span>{targets.length} possible door access endpoints found in this business.</span>
+        </div>
+        <ShieldCheck size={28} />
+      </div>
+
+      {!sessionToken ? (
+        <form className="door-access-login" onSubmit={handleUnlock}>
+          <label className="field-label" htmlFor="door-access-password">
+            Door access password
+          </label>
+          <div className="door-access-login-row">
+            <input
+              id="door-access-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Password"
+            />
+            <button className="inline-action" type="submit" disabled={isBusy || !password}>
+              <KeyRound size={16} />
+              Unlock
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="door-access-unlocked">
+          <ShieldCheck size={18} />
+          Controls unlocked
+          <button type="button" onClick={() => setSessionToken("")}>Lock</button>
+        </div>
+      )}
+
+      <p className="save-notice">{notice}</p>
+
+      <div className="door-grid">
+        {targets.map((target) => (
+          <article className="door-card" key={target.id}>
+            <div>
+              <p className="eyebrow">{target.rackName}</p>
+              <h3>{target.name}</h3>
+              <span>
+                {target.deviceName} · {target.portLabel} · {target.type}
+              </span>
+              <small>
+                {target.ip || "No IP"} · {target.mac || "No MAC"}
+              </small>
+            </div>
+            <button
+              className="door-buzz-button"
+              type="button"
+              disabled={!sessionToken || isBusy}
+              onClick={() => void handleBuzz(target)}
+            >
+              <Power size={18} />
+              Buzz
+            </button>
+          </article>
+        ))}
+      </div>
+
+      {!targets.length ? (
+        <div className="panel empty-report-panel">
+          <p>No door access endpoints were found in the current business. Sync inventory or mark ports as Door Reader or Card Terminal first.</p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessTarget[] {
+  const rackIds = new Set(racks.map((rack) => rack.id));
+  const racksById = new Map(racks.map((rack) => [rack.id, rack]));
+  const doorTerms = /\b(ua|access|door|reader|card|terminal|ultra|intercom)\b/i;
+
+  return devices
+    .filter((device) => rackIds.has(device.rackId))
+    .flatMap((device) => {
+      const rack = racksById.get(device.rackId);
+
+      return getPhysicalFaceplatePorts(device)
+        .filter((port) => {
+          const label = [
+            port.endpointType,
+            port.importedEndpointName,
+            port.connectedTo,
+            port.endpointOwner,
+            port.endpointLocation,
+            port.endpointVendor,
+            port.endpointNotes,
+          ].join(" ");
+
+          return port.endpointType === "door-reader" || port.endpointType === "card-terminal" || doorTerms.test(label);
+        })
+        .map((port) => ({
+          id: `${device.id}:${port.id}`,
+          name: getReportDeviceName(port),
+          type: formatEndpointType(port.endpointType) || "Door access",
+          rackName: rack?.name ?? "Unknown rack",
+          deviceName: device.name,
+          portLabel: port.label,
+          ip: port.connectedIp ?? "",
+          mac: port.connectedMac ?? "",
+        }));
+    })
+    .filter((target, index, list) => {
+      const key = `${target.name}|${target.mac}|${target.ip}|${target.deviceName}|${target.portLabel}`;
+      return list.findIndex((item) => `${item.name}|${item.mac}|${item.ip}|${item.deviceName}|${item.portLabel}` === key) === index;
+    })
+    .sort((left, right) => left.rackName.localeCompare(right.rackName) || left.name.localeCompare(right.name));
 }
 
 function getReportDeviceName(port: Device["ports"][number]): string {

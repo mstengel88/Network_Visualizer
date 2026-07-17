@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import http from "node:http";
 import https from "node:https";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { URL } from "node:url";
@@ -15,6 +16,8 @@ export default defineConfig({
     {
       name: "unifi-dev-proxy",
       configureServer(server) {
+        const accessSessions = new Map<string, number>();
+
         server.middlewares.use("/api/unifi/test", async (req, res) => {
           if (req.method !== "POST") {
             sendJson(res, 405, { ok: false, message: "Use POST for UniFi connection tests" });
@@ -160,6 +163,74 @@ export default defineConfig({
             });
           }
         });
+
+        server.middlewares.use("/api/access/login", async (req, res) => {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { ok: false, message: "Use POST for door access login" });
+            return;
+          }
+
+          try {
+            const request = await readJsonBody<{ password?: string }>(req);
+            const configuredPassword = getDoorAccessPassword();
+
+            if (!configuredPassword) {
+              sendJson(res, 503, {
+                ok: false,
+                message: "Door access password is not configured. Set DOOR_ACCESS_PASSWORD on the server.",
+              });
+              return;
+            }
+
+            if (!passwordsMatch(request.password ?? "", configuredPassword)) {
+              sendJson(res, 401, { ok: false, message: "Door access password is incorrect" });
+              return;
+            }
+
+            const token = randomUUID();
+            const expiresAt = Date.now() + 15 * 60 * 1000;
+            accessSessions.set(token, expiresAt);
+            sendJson(res, 200, {
+              ok: true,
+              message: "Door access page unlocked for this browser session",
+              data: { token, expiresAt },
+            });
+          } catch (error) {
+            sendJson(res, 500, {
+              ok: false,
+              message: error instanceof Error ? error.message : "Could not unlock door access page",
+            });
+          }
+        });
+
+        server.middlewares.use("/api/access/buzz", async (req, res) => {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { ok: false, message: "Use POST for door buzz actions" });
+            return;
+          }
+
+          try {
+            const request = await readJsonBody<{ token?: string; doorId?: string; doorName?: string }>(req);
+            const token = request.token ?? "";
+            const expiresAt = accessSessions.get(token) ?? 0;
+
+            if (!token || expiresAt < Date.now()) {
+              accessSessions.delete(token);
+              sendJson(res, 401, { ok: false, message: "Door access session expired. Unlock the page again." });
+              return;
+            }
+
+            sendJson(res, 501, {
+              ok: false,
+              message: `Door buzz is protected but not connected to UniFi Access yet for ${request.doorName || request.doorId || "this door"}.`,
+            });
+          } catch (error) {
+            sendJson(res, 500, {
+              ok: false,
+              message: error instanceof Error ? error.message : "Could not run door buzz action",
+            });
+          }
+        });
       },
     },
   ],
@@ -190,6 +261,16 @@ function readJsonBody<T>(req: http.IncomingMessage): Promise<T> {
     });
     req.on("error", reject);
   });
+}
+
+function getDoorAccessPassword(): string {
+  return process.env.DOOR_ACCESS_PASSWORD || process.env.ACCESS_PAGE_PASSWORD || "";
+}
+
+function passwordsMatch(input: string, expected: string): boolean {
+  const inputHash = createHash("sha256").update(input).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(inputHash, expectedHash);
 }
 
 async function savePlanSnapshotToDisk(snapshot: {

@@ -126,7 +126,7 @@ input {
 
 .page-nav {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 
@@ -150,6 +150,120 @@ input {
   color: #07120d;
   background: #69e0a3;
   border-color: #69e0a3;
+}
+
+.door-access-page {
+  display: grid;
+  gap: 16px;
+}
+
+.door-access-hero,
+.door-access-login,
+.door-card,
+.door-access-unlocked {
+  background: #ffffff;
+  border: 1px solid #d6e2db;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(7, 18, 13, 0.06);
+}
+
+.door-access-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+.door-access-hero h2 {
+  margin: 0 0 4px;
+  font-size: 28px;
+}
+
+.door-access-hero span,
+.door-card span,
+.door-card small {
+  color: #60746a;
+}
+
+.door-access-login {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+  padding: 16px;
+}
+
+.door-access-login-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.door-access-login-row input {
+  width: 100%;
+}
+
+.door-access-unlocked {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #174b32;
+  font-weight: 700;
+  background: #dff9ea;
+}
+
+.door-access-unlocked button {
+  color: #174b32;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgba(23, 75, 50, 0.2);
+  padding-left: 10px;
+}
+
+.door-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.door-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+}
+
+.door-card h3 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.door-card small {
+  display: block;
+  margin-top: 8px;
+}
+
+.door-buzz-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 104px;
+  min-height: 44px;
+  color: #07120d;
+  font-weight: 800;
+  background: #b7ef10;
+  border: 1px solid #8fbd0c;
+  border-radius: 8px;
+}
+
+.door-buzz-button:disabled {
+  color: #60746a;
+  background: #edf3ef;
+  border-color: #d6e2db;
+  cursor: not-allowed;
 }
 
 .rack-tab {
