@@ -198,12 +198,25 @@ function App() {
     : [];
 
   function handleInventorySynced(nextInventory: InventoryState, message: string) {
-    const inventoryWithLayout = applyLayoutOverrides(nextInventory);
+    const mergedInventory = mergeSyncedInventoryIntoCurrentPlan(
+      inventory,
+      nextInventory,
+      business.id,
+      selectedRack?.id,
+    );
+    const inventoryWithLayout = applyLayoutOverrides(mergedInventory);
+    const nextBusinessId = inventoryWithLayout.businesses.some((item) => item.id === business.id)
+      ? business.id
+      : inventoryWithLayout.businesses[0]?.id ?? "";
+    const nextRackId = selectedRack && inventoryWithLayout.racks.some((rack) => rack.id === selectedRack.id)
+      ? selectedRack.id
+      : inventoryWithLayout.racks.find((rack) => rack.businessId === nextBusinessId)?.id ?? "";
+
     persistInventory(inventoryWithLayout);
     setInventory(inventoryWithLayout);
-    setBusinessId(inventoryWithLayout.businesses[0]?.id ?? "");
-    setSelectedRackId(inventoryWithLayout.racks[0]?.id ?? "");
-    setImportNotice(message);
+    setBusinessId(nextBusinessId);
+    setSelectedRackId(nextRackId);
+    setImportNotice(`${message}; updated the currently loaded site instead of creating a new one`);
   }
 
   function handleDeviceMoved(deviceId: string, rackId: string, uStart: number) {
@@ -892,6 +905,126 @@ function normalizeShelfPorts(inventory: InventoryState): InventoryState {
         : device,
     ),
   };
+}
+
+function mergeSyncedInventoryIntoCurrentPlan(
+  currentInventory: InventoryState,
+  syncedInventory: InventoryState,
+  targetBusinessId: string,
+  targetRackId?: string,
+): InventoryState {
+  const targetRack =
+    currentInventory.racks.find((rack) => rack.id === targetRackId) ??
+    currentInventory.racks.find((rack) => rack.businessId === targetBusinessId) ??
+    currentInventory.racks[0];
+  const nextDevices = [...currentInventory.devices];
+  const updatedDeviceIndexes = new Set<number>();
+
+  syncedInventory.devices.forEach((syncedDevice) => {
+    const existingIndex = findMatchingSyncedDeviceIndex(nextDevices, syncedDevice, updatedDeviceIndexes);
+
+    if (existingIndex >= 0) {
+      nextDevices[existingIndex] = mergeSyncedDevice(nextDevices[existingIndex], syncedDevice);
+      updatedDeviceIndexes.add(existingIndex);
+      return;
+    }
+
+    if (!targetRack) return;
+    nextDevices.push({
+      ...syncedDevice,
+      rackId: targetRack.id,
+      uStart: findOpenUnit(targetRack, nextDevices),
+    });
+    updatedDeviceIndexes.add(nextDevices.length - 1);
+  });
+
+  return {
+    ...currentInventory,
+    devices: nextDevices,
+    connections: currentInventory.connections,
+  };
+}
+
+function findMatchingSyncedDeviceIndex(
+  devices: Device[],
+  syncedDevice: Device,
+  usedIndexes: Set<number>,
+): number {
+  const exactIdIndex = devices.findIndex((device, index) => !usedIndexes.has(index) && device.id === syncedDevice.id);
+  if (exactIdIndex >= 0) return exactIdIndex;
+
+  const syncedName = normalizeMatchText(syncedDevice.name);
+  const syncedModel = normalizeMatchText(syncedDevice.model);
+  const syncedIp = syncedDevice.ip?.trim();
+  const nameAndModelIndex = devices.findIndex(
+    (device, index) =>
+      !usedIndexes.has(index) &&
+      normalizeMatchText(device.name) === syncedName &&
+      normalizeMatchText(device.model) === syncedModel,
+  );
+  if (nameAndModelIndex >= 0) return nameAndModelIndex;
+
+  const nameIndex = devices.findIndex(
+    (device, index) =>
+      !usedIndexes.has(index) &&
+      isRackNetworkDevice(device) &&
+      normalizeMatchText(device.name) === syncedName,
+  );
+  if (nameIndex >= 0) return nameIndex;
+
+  if (syncedIp) {
+    return devices.findIndex(
+      (device, index) => !usedIndexes.has(index) && isRackNetworkDevice(device) && device.ip === syncedIp,
+    );
+  }
+
+  return -1;
+}
+
+function mergeSyncedDevice(existingDevice: Device, syncedDevice: Device): Device {
+  return {
+    ...existingDevice,
+    name: syncedDevice.name || existingDevice.name,
+    model: syncedDevice.model || existingDevice.model,
+    type: syncedDevice.type || existingDevice.type,
+    status: syncedDevice.status,
+    ip: syncedDevice.ip || existingDevice.ip,
+    ports: mergeSyncedPorts(existingDevice.ports, syncedDevice.ports),
+  };
+}
+
+function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["ports"]): Device["ports"] {
+  const existingByNumber = new Map(existingPorts.map((port) => [getPortSortNumber(port), port]));
+  const syncedNumbers = new Set(syncedPorts.map((port) => getPortSortNumber(port)));
+  const mergedPorts = syncedPorts.map((syncedPort) => {
+    const existingPort = existingByNumber.get(getPortSortNumber(syncedPort));
+    if (!existingPort) return syncedPort;
+
+    return {
+      ...syncedPort,
+      label: existingPort.label || syncedPort.label,
+      patchConnection: existingPort.patchConnection || syncedPort.patchConnection,
+      wireUse: existingPort.wireUse ?? syncedPort.wireUse,
+      wireColor: existingPort.wireColor ?? syncedPort.wireColor,
+      endpointType: existingPort.endpointType ?? syncedPort.endpointType,
+      endpointLocation: existingPort.endpointLocation ?? syncedPort.endpointLocation,
+      endpointOwner: existingPort.endpointOwner ?? syncedPort.endpointOwner,
+      endpointNotes: existingPort.endpointNotes ?? syncedPort.endpointNotes,
+      importedEndpointName:
+        syncedPort.importedEndpointName ?? syncedPort.connectedTo ?? existingPort.importedEndpointName,
+    };
+  });
+  const existingOnlyPorts = existingPorts.filter((port) => !syncedNumbers.has(getPortSortNumber(port)));
+
+  return [...mergedPorts, ...existingOnlyPorts];
+}
+
+function isRackNetworkDevice(device: Device): boolean {
+  return ["gateway", "switch", "server", "nvr"].includes(device.type);
+}
+
+function normalizeMatchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function persistInventory(inventory: InventoryState): void {
