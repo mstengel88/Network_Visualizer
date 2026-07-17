@@ -507,7 +507,9 @@ function mapDevicePorts(
     const poeState = getString(portObject, "poe_mode") || getString(poe, "state") || getString(poe, "mode");
     const macs = getPortMacs(portObject);
     const macMatchedClient = macs.map((mac) => clientsByMac.get(normalizeMac(mac))).find(Boolean);
-    const portMatchedClient = macMatchedClient ? undefined : findClientByPort(device, idx, clientsByPort);
+    const portMatchedClient = macMatchedClient || !isPortActiveState(state)
+      ? undefined
+      : findClientByPort(device, idx, clientsByPort);
     const connectedClient = macMatchedClient || portMatchedClient;
     const matchedBy = macMatchedClient ? "mac" : portMatchedClient ? "port" : "none";
     const portName = getString(portObject, "name");
@@ -1519,13 +1521,6 @@ function isGenericManagedEndpointName(value: string): boolean {
       "camera",
       "protect camera",
       "unifi camera",
-      "u6+",
-      "u6 plus",
-      "u6plus",
-      "u7 pro",
-      "u7 pro outdoor",
-      "u7pro",
-      "u7prooutdoor",
       "ua ultra",
       "uaultra",
       "ua hub door mini",
@@ -1535,9 +1530,6 @@ function isGenericManagedEndpointName(value: string): boolean {
       "accesspoint",
       "protectcamera",
       "unificamera",
-      "u6plus",
-      "u7pro",
-      "u7prooutdoor",
       "uaultra",
       "uahubdoormini",
     ].includes(compact)
