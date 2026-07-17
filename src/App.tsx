@@ -3891,7 +3891,7 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const result = await readDoorAccessResponse<{ token?: string }>(response);
+      const result = await readDoorAccessResponse<{ token?: string }>(response, "/api/access/login");
 
       if (!response.ok || !result.ok || !result.data?.token) {
         throw new Error(result.message || "Door access login failed");
@@ -3922,22 +3922,12 @@ function DoorAccessPage({
     setNotice(`Sending buzz request for ${target.name}...`);
 
     try {
-      const response = await fetch("/api/access-buzz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
-      });
-      let result = await readDoorAccessResponse(response);
-      if (isMissingDoorAccessRoute(result.message)) {
-        const fallbackResponse = await fetch("/api/access/buzz", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
-        });
-        result = await readDoorAccessResponse(fallbackResponse);
-      }
+      const result = await postDoorAccessJson(
+        ["/api/access-buzz", "/api/access/buzz"],
+        { token: sessionToken, doorId: target.id, doorName: target.name },
+      );
 
-      if (!response.ok || !result.ok) {
+      if (!result.ok) {
         throw new Error(result.message || "Door buzz request failed");
       }
 
@@ -3953,22 +3943,12 @@ function DoorAccessPage({
     setIsBusy(true);
 
     try {
-      const response = await fetch("/api/access-doors", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      let result = await readDoorAccessResponse<AccessDoorApiTarget[]>(response);
-      if (isMissingDoorAccessRoute(result.message)) {
-        const fallbackResponse = await fetch("/api/access/doors", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
-        result = await readDoorAccessResponse<AccessDoorApiTarget[]>(fallbackResponse);
-      }
+      const result = await postDoorAccessJson<AccessDoorApiTarget[]>(
+        ["/api/access-doors", "/api/access/doors"],
+        { token },
+      );
 
-      if (!response.ok || !result.ok) {
+      if (!result.ok) {
         throw new Error(result.message || "Could not load UniFi Access doors");
       }
 
@@ -4097,8 +4077,32 @@ function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessT
     .sort((left, right) => left.rackName.localeCompare(right.rackName) || left.name.localeCompare(right.name));
 }
 
+async function postDoorAccessJson<T = unknown>(
+  paths: string[],
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; message: string; data?: T }> {
+  const failures: string[] = [];
+
+  for (const path of paths) {
+    const response = await fetch(`${path}?t=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await readDoorAccessResponse<T>(response, path);
+    if (!isMissingDoorAccessRoute(result.message)) return result;
+    failures.push(result.message);
+  }
+
+  return {
+    ok: false,
+    message: failures.join(" "),
+  };
+}
+
 async function readDoorAccessResponse<T = unknown>(
   response: Response,
+  path: string,
 ): Promise<{ ok: boolean; message: string; data?: T }> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
@@ -4106,8 +4110,8 @@ async function readDoorAccessResponse<T = unknown>(
     return {
       ok: false,
       message: preview.startsWith("<")
-        ? "Door access API route returned the app page instead of JSON. Restart or rebuild the server so /api/access/* routes are active."
-        : `Door access API returned ${contentType || "an unknown content type"}`,
+        ? `${path} returned the app page instead of JSON (HTTP ${response.status}). The server or proxy is not routing this POST to the API.`
+        : `${path} returned ${contentType || "an unknown content type"} (HTTP ${response.status})`,
     };
   }
 
