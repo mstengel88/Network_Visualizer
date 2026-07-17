@@ -999,6 +999,7 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
   const mergedPorts = syncedPorts.map((syncedPort) => {
     const existingPort = existingByNumber.get(getPortSortNumber(syncedPort));
     if (!existingPort) return syncedPort;
+    const syncedPortIsOpen = isOpenSyncedPort(syncedPort);
 
     return {
       ...syncedPort,
@@ -1007,10 +1008,10 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
       patchConnection: existingPort.patchConnection || syncedPort.patchConnection,
       wireUse: existingPort.wireUse ?? syncedPort.wireUse,
       wireColor: existingPort.wireColor ?? syncedPort.wireColor,
-      endpointType: existingPort.endpointType ?? syncedPort.endpointType,
-      endpointLocation: existingPort.endpointLocation ?? syncedPort.endpointLocation,
-      endpointOwner: existingPort.endpointOwner ?? syncedPort.endpointOwner,
-      endpointNotes: existingPort.endpointNotes ?? syncedPort.endpointNotes,
+      endpointType: syncedPortIsOpen ? syncedPort.endpointType : existingPort.endpointType ?? syncedPort.endpointType,
+      endpointLocation: syncedPortIsOpen ? syncedPort.endpointLocation : existingPort.endpointLocation ?? syncedPort.endpointLocation,
+      endpointOwner: syncedPortIsOpen ? syncedPort.endpointOwner : existingPort.endpointOwner ?? syncedPort.endpointOwner,
+      endpointNotes: syncedPortIsOpen ? syncedPort.endpointNotes : existingPort.endpointNotes ?? syncedPort.endpointNotes,
       importedEndpointName:
         getResolvedSyncedImportedEndpointName(existingPort, syncedPort),
     };
@@ -1043,7 +1044,7 @@ function getResolvedSyncedImportedEndpointName(
 
 function isOpenSyncedPort(port: Device["ports"][number]): boolean {
   const value = `${port.connectedTo ?? ""} ${port.importedEndpointName ?? ""} ${port.speed ?? ""}`.toLowerCase();
-  return value.includes("open") || value.includes("down");
+  return value.includes("open") || value.includes("down") || value.includes("no client reported");
 }
 
 function isGenericLinkEndpoint(value: string | undefined): boolean {
@@ -1427,10 +1428,9 @@ function formatConnectionLabel(value: string | undefined): string {
 }
 
 function getPortEndpointDisplay(port: Device["ports"][number]): string {
-  const connectedTo = formatConnectionLabel(port.importedEndpointName || port.connectedTo);
-  const normalized = connectedTo.toLowerCase();
+  const connectedTo = getConnectedEndpointDisplay(port);
   const endpoint =
-    connectedTo && !["open", "down", "unknown", "-"].includes(normalized) && !normalized.includes("no client reported")
+    connectedTo
       ? connectedTo
       : port.endpointOwner || port.endpointLocation || port.connectedIp || port.connectedMac || "";
 
@@ -1451,11 +1451,16 @@ function getPortTooltip(port: Device["ports"][number]): string {
 function getConnectedEndpointDisplay(port: Device["ports"][number]): string {
   const connectedTo = formatConnectionLabel(port.connectedTo);
   const importedEndpoint = formatConnectionLabel(port.importedEndpointName);
-  if (connectedTo === "Open") return importedEndpoint === "Open" ? "" : importedEndpoint;
-  if (isGenericAccessEndpointName(connectedTo) && importedEndpoint !== "Open" && !isGenericAccessEndpointName(importedEndpoint)) {
+  if (!isUsableEndpointLabel(connectedTo)) return "";
+  if (isGenericAccessEndpointName(connectedTo) && isUsableEndpointLabel(importedEndpoint) && !isGenericAccessEndpointName(importedEndpoint)) {
     return importedEndpoint;
   }
   return connectedTo;
+}
+
+function isUsableEndpointLabel(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return Boolean(value) && !["open", "down", "unknown", "-"].includes(normalized) && !normalized.includes("no client reported");
 }
 
 function isGenericAccessEndpointName(value: string): boolean {

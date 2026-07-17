@@ -114,6 +114,7 @@ function mergeDevicePorts(basePorts: Port[], overridePorts: Port[]): Port[] {
     const migratedPatchConnection =
       overridePort.patchConnection || (looksLikePatchLink(overridePort.connectedTo) ? overridePort.connectedTo : "");
     const connectedTo = resolveMergedConnectedTo(basePort, overridePort);
+    const baseIsOpen = isOpenOrUnresolvedPort(basePort);
 
     return {
       ...basePort,
@@ -123,13 +124,13 @@ function mergeDevicePorts(basePorts: Port[], overridePorts: Port[]): Port[] {
       connectedTo,
       importedEndpointName: basePort.importedEndpointName ?? basePort.connectedTo,
       patchConnection: migratedPatchConnection || basePort.patchConnection,
-      endpointType: overridePort.endpointType ?? basePort.endpointType,
-      endpointLocation: overridePort.endpointLocation ?? basePort.endpointLocation,
-      endpointOwner: overridePort.endpointOwner ?? basePort.endpointOwner,
-      endpointVendor: basePort.endpointVendor ?? overridePort.endpointVendor,
-      endpointNotes: overridePort.endpointNotes ?? basePort.endpointNotes,
-      connectedMac: basePort.connectedMac || overridePort.connectedMac,
-      connectedIp: basePort.connectedIp || overridePort.connectedIp,
+      endpointType: baseIsOpen ? basePort.endpointType : overridePort.endpointType ?? basePort.endpointType,
+      endpointLocation: baseIsOpen ? basePort.endpointLocation : overridePort.endpointLocation ?? basePort.endpointLocation,
+      endpointOwner: baseIsOpen ? basePort.endpointOwner : overridePort.endpointOwner ?? basePort.endpointOwner,
+      endpointVendor: baseIsOpen ? basePort.endpointVendor : basePort.endpointVendor ?? overridePort.endpointVendor,
+      endpointNotes: baseIsOpen ? basePort.endpointNotes : overridePort.endpointNotes ?? basePort.endpointNotes,
+      connectedMac: baseIsOpen ? basePort.connectedMac : basePort.connectedMac || overridePort.connectedMac,
+      connectedIp: baseIsOpen ? basePort.connectedIp : basePort.connectedIp || overridePort.connectedIp,
       poeMode: basePort.poeMode || overridePort.poeMode,
       stp: basePort.stp || overridePort.stp,
       wireUse: overridePort.wireUse ?? basePort.wireUse,
@@ -140,6 +141,7 @@ function mergeDevicePorts(basePorts: Port[], overridePorts: Port[]): Port[] {
 
 function resolveMergedConnectedTo(basePort: Port, overridePort: Port): string | undefined {
   if (looksLikePatchLink(overridePort.connectedTo)) return basePort.connectedTo;
+  if (isOpenOrUnresolvedPort(basePort)) return basePort.connectedTo;
   const baseEndpoint = basePort.importedEndpointName ?? basePort.connectedTo;
   const overrideEndpoint = overridePort.connectedTo;
   if (
@@ -152,6 +154,16 @@ function resolveMergedConnectedTo(basePort: Port, overridePort: Port): string | 
   }
 
   return overrideEndpoint ?? basePort.connectedTo;
+}
+
+function isOpenOrUnresolvedPort(port: Port): boolean {
+  const value = `${port.connectedTo ?? ""} ${port.importedEndpointName ?? ""}`.toLowerCase();
+  return (
+    value.includes("open") ||
+    value.includes("down") ||
+    value.includes("no client reported") ||
+    value === "unknown"
+  );
 }
 
 function looksLikePatchLink(value: string | undefined): boolean {
