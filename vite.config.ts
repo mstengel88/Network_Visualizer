@@ -301,9 +301,158 @@ export default defineConfig({
           }
         });
       },
+      configurePreviewServer(server) {
+        registerAccessRoutes(server.middlewares);
+      },
     },
   ],
 });
+
+function registerAccessRoutes(middlewares: {
+  use: (
+    path: string,
+    handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+  ) => void;
+}) {
+  const accessSessions = new Map<string, number>();
+
+  middlewares.use("/api/access/login", async (req, res) => {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { ok: false, message: "Use POST for door access login" });
+      return;
+    }
+
+    try {
+      const request = await readJsonBody<{ password?: string }>(req);
+      const configuredPassword = getDoorAccessPassword();
+
+      if (!configuredPassword) {
+        sendJson(res, 503, {
+          ok: false,
+          message: "Door access password is not configured. Set DOOR_ACCESS_PASSWORD on the server.",
+        });
+        return;
+      }
+
+      if (!passwordsMatch(request.password ?? "", configuredPassword)) {
+        sendJson(res, 401, { ok: false, message: "Door access password is incorrect" });
+        return;
+      }
+
+      const token = randomUUID();
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      accessSessions.set(token, expiresAt);
+      sendJson(res, 200, {
+        ok: true,
+        message: "Door access page unlocked for this browser session",
+        data: { token, expiresAt },
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not unlock door access page",
+      });
+    }
+  });
+
+  middlewares.use("/api/access/doors", async (req, res) => {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { ok: false, message: "Use POST for door access door lists" });
+      return;
+    }
+
+    try {
+      const request = await readJsonBody<{ token?: string }>(req);
+      if (!isDoorAccessSessionValid(accessSessions, request.token ?? "")) {
+        sendJson(res, 401, { ok: false, message: "Door access session expired. Unlock the page again." });
+        return;
+      }
+
+      const config = getUniFiAccessConfig();
+      if (!config.baseUrl || !config.apiToken) {
+        sendJson(res, 503, {
+          ok: false,
+          message: "UniFi Access API is not configured. Set UNIFI_ACCESS_URL and UNIFI_ACCESS_TOKEN on the server.",
+        });
+        return;
+      }
+
+      const result = await requestUniFiAccessJson(
+        `${config.baseUrl}/api/v1/developer/doors`,
+        "GET",
+        config.apiToken,
+      );
+
+      if (!result.ok) {
+        sendJson(res, 502, {
+          ok: false,
+          message: `Could not load UniFi Access doors: ${result.message}`,
+          data: result.data,
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        message: "Loaded UniFi Access doors",
+        data: getAccessDoorArray(result.data).map(normalizeAccessDoor),
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not load UniFi Access doors",
+      });
+    }
+  });
+
+  middlewares.use("/api/access/buzz", async (req, res) => {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { ok: false, message: "Use POST for door buzz actions" });
+      return;
+    }
+
+    try {
+      const request = await readJsonBody<{ token?: string; doorId?: string; doorName?: string }>(req);
+      if (!isDoorAccessSessionValid(accessSessions, request.token ?? "")) {
+        sendJson(res, 401, { ok: false, message: "Door access session expired. Unlock the page again." });
+        return;
+      }
+
+      const config = getUniFiAccessConfig();
+      if (!config.baseUrl || !config.apiToken) {
+        sendJson(res, 503, {
+          ok: false,
+          message: "UniFi Access API is not configured. Set UNIFI_ACCESS_URL and UNIFI_ACCESS_TOKEN on the server.",
+        });
+        return;
+      }
+
+      if (!request.doorId) {
+        sendJson(res, 400, { ok: false, message: "Door ID is required" });
+        return;
+      }
+
+      const result = await requestUniFiAccessJson(
+        `${config.baseUrl}/api/v1/developer/doors/${encodeURIComponent(request.doorId)}/unlock`,
+        "PUT",
+        config.apiToken,
+      );
+
+      sendJson(res, result.ok ? 200 : 502, {
+        ok: result.ok,
+        message: result.ok
+          ? `Buzzed ${request.doorName || "door"}`
+          : `Could not buzz ${request.doorName || "door"}: ${result.message}`,
+        data: result.data,
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not run door buzz action",
+      });
+    }
+  });
+}
 
 function sendJson(
   res: http.ServerResponse,

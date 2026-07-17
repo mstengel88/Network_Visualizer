@@ -3891,7 +3891,7 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const result = await response.json() as { ok: boolean; message: string; data?: { token?: string } };
+      const result = await readDoorAccessResponse<{ token?: string }>(response);
 
       if (!response.ok || !result.ok || !result.data?.token) {
         throw new Error(result.message || "Door access login failed");
@@ -3927,7 +3927,7 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: sessionToken, doorId: target.id, doorName: target.name }),
       });
-      const result = await response.json() as { ok: boolean; message: string };
+      const result = await readDoorAccessResponse(response);
 
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Door buzz request failed");
@@ -3950,7 +3950,7 @@ function DoorAccessPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const result = await response.json() as { ok: boolean; message: string; data?: AccessDoorApiTarget[] };
+      const result = await readDoorAccessResponse<AccessDoorApiTarget[]>(response);
 
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Could not load UniFi Access doors");
@@ -4079,6 +4079,23 @@ function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessT
       return list.findIndex((item) => `${item.name}|${item.mac}|${item.ip}|${item.deviceName}|${item.portLabel}` === key) === index;
     })
     .sort((left, right) => left.rackName.localeCompare(right.rackName) || left.name.localeCompare(right.name));
+}
+
+async function readDoorAccessResponse<T = unknown>(
+  response: Response,
+): Promise<{ ok: boolean; message: string; data?: T }> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    const preview = (await response.text()).trim().slice(0, 80);
+    return {
+      ok: false,
+      message: preview.startsWith("<")
+        ? "Door access API route returned the app page instead of JSON. Restart or rebuild the server so /api/access/* routes are active."
+        : `Door access API returned ${contentType || "an unknown content type"}`,
+    };
+  }
+
+  return response.json() as Promise<{ ok: boolean; message: string; data?: T }>;
 }
 
 function mapAccessDoorToTarget(door: AccessDoorApiTarget): DoorAccessTarget {
