@@ -207,8 +207,12 @@ function mapCloudInventory(data: {
     ...(data.clients ?? []),
     ...importedDeviceRecords,
   ];
+  const portEndpointRecords = [
+    ...(data.legacyClients ?? []),
+    ...(data.clients ?? []),
+  ];
   const clientsByMac = buildClientsByMac(endpointRecords);
-  const clientsByPort = buildClientsByPort(endpointRecords);
+  const clientsByPort = buildClientsByPort(portEndpointRecords);
   const devices = rackDeviceRecords.map((device, index) => {
     const deviceObject = asRecord(device);
     const rackId = findRackIdForDevice(deviceObject, rackAliases) ?? unmatchedRack.id;
@@ -541,7 +545,7 @@ function buildClientsByMac(clients: unknown[]): Map<string, Record<string, unkno
 
   clients.forEach((client) => {
     const clientObject = asRecord(client);
-    getMacCandidates(clientObject).forEach((mac) => clientsByMac.set(mac, clientObject));
+    getMacCandidates(clientObject).forEach((mac) => setPreferredEndpointRecord(clientsByMac, mac, clientObject));
   });
 
   return clientsByMac;
@@ -610,18 +614,45 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
     const port = getUplinkPortCandidate(clientObject, uplink);
 
     if (port) {
-      deviceIds.forEach((deviceId) => clientsByPort.set(makePortClientKey(deviceId, port), clientObject));
+      deviceIds.forEach((deviceId) => setPreferredEndpointRecord(clientsByPort, makePortClientKey(deviceId, port), clientObject));
     }
 
     getNestedUplinkEntries(clientObject).forEach((entry) => {
       const entryDeviceIds = uniqueStrings([...deviceIds, ...getDeviceIdentifierCandidates(entry)]);
       const entryPort = getUplinkPortCandidate(entry, asRecord(entry.uplink));
       if (!entryPort) return;
-      entryDeviceIds.forEach((deviceId) => clientsByPort.set(makePortClientKey(deviceId, entryPort), clientObject));
+      entryDeviceIds.forEach((deviceId) => setPreferredEndpointRecord(clientsByPort, makePortClientKey(deviceId, entryPort), clientObject));
     });
   });
 
   return clientsByPort;
+}
+
+function setPreferredEndpointRecord(
+  endpointMap: Map<string, Record<string, unknown>>,
+  key: string,
+  nextRecord: Record<string, unknown>,
+): void {
+  const existingRecord = endpointMap.get(key);
+  if (!existingRecord || shouldPreferEndpointRecord(nextRecord, existingRecord)) {
+    endpointMap.set(key, nextRecord);
+  }
+}
+
+function shouldPreferEndpointRecord(
+  nextRecord: Record<string, unknown>,
+  existingRecord: Record<string, unknown>,
+): boolean {
+  const nextName = getClientName(nextRecord);
+  const existingName = getClientName(existingRecord);
+  if (nextName && !existingName) return true;
+  if (!nextName && existingName) return false;
+
+  const nextHasIp = Boolean(getClientIp(nextRecord));
+  const existingHasIp = Boolean(getClientIp(existingRecord));
+  if (nextHasIp !== existingHasIp) return nextHasIp;
+
+  return false;
 }
 
 function getDeviceIdentifierCandidates(record: Record<string, unknown>): string[] {

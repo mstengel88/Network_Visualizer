@@ -1342,19 +1342,24 @@ function enrichPatchPortFromTarget(
   targetDevice: Device,
 ): Device["ports"][number] {
   const endpointName = getPortEndpointDisplay(targetPort);
-  const connectedTo = endpointName && endpointName !== "Open" ? endpointName : targetPort.connectedTo || targetDevice.name;
+  const targetIsOpen = !isUsableEndpointLabel(formatConnectionLabel(targetPort.connectedTo));
+  const connectedTo = targetIsOpen
+    ? "Open"
+    : endpointName && endpointName !== "Open"
+      ? endpointName
+      : targetPort.connectedTo || targetDevice.name;
 
   return {
     ...patchPort,
     connectedTo,
-    importedEndpointName: connectedTo || targetPort.importedEndpointName || targetPort.connectedTo || patchPort.importedEndpointName,
-    connectedMac: targetPort.connectedMac ?? patchPort.connectedMac,
-    connectedIp: targetPort.connectedIp ?? patchPort.connectedIp,
-    endpointType: targetPort.endpointType ?? patchPort.endpointType,
-    endpointLocation: targetPort.endpointLocation ?? patchPort.endpointLocation,
-    endpointOwner: targetPort.endpointOwner ?? patchPort.endpointOwner,
-    endpointVendor: targetPort.endpointVendor ?? patchPort.endpointVendor,
-    endpointNotes: targetPort.endpointNotes ?? patchPort.endpointNotes,
+    importedEndpointName: targetIsOpen ? "Open" : connectedTo || targetPort.importedEndpointName || targetPort.connectedTo || patchPort.importedEndpointName,
+    connectedMac: targetIsOpen ? "" : targetPort.connectedMac ?? patchPort.connectedMac,
+    connectedIp: targetIsOpen ? "" : targetPort.connectedIp ?? patchPort.connectedIp,
+    endpointType: targetIsOpen ? "" : targetPort.endpointType ?? patchPort.endpointType,
+    endpointLocation: targetIsOpen ? "" : targetPort.endpointLocation ?? patchPort.endpointLocation,
+    endpointOwner: targetIsOpen ? "" : targetPort.endpointOwner ?? patchPort.endpointOwner,
+    endpointVendor: targetIsOpen ? "" : targetPort.endpointVendor ?? patchPort.endpointVendor,
+    endpointNotes: targetIsOpen ? "" : targetPort.endpointNotes ?? patchPort.endpointNotes,
     poeMode: targetPort.poeMode ?? patchPort.poeMode,
     stp: targetPort.stp ?? patchPort.stp,
     speed: targetPort.speed || patchPort.speed,
