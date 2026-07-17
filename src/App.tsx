@@ -4091,7 +4091,7 @@ async function postDoorAccessJson<T = unknown>(
     });
     const result = await readDoorAccessResponse<T>(response, path);
     if (!isMissingDoorAccessRoute(result.message)) return result;
-    failures.push(result.message);
+    failures.push(result.message || `${path} did not return the expected API response`);
   }
 
   return {
@@ -4115,11 +4115,25 @@ async function readDoorAccessResponse<T = unknown>(
     };
   }
 
-  return response.json() as Promise<{ ok: boolean; message: string; data?: T }>;
+  const payload = await response.json() as unknown;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const record = payload as { ok?: unknown; message?: unknown; data?: unknown };
+    return {
+      ok: typeof record.ok === "boolean" ? record.ok : response.ok,
+      message: typeof record.message === "string" ? record.message : `${path} returned JSON without a message`,
+      data: record.data as T | undefined,
+    };
+  }
+
+  return {
+    ok: response.ok,
+    message: `${path} returned raw JSON instead of an API response`,
+    data: payload as T,
+  };
 }
 
-function isMissingDoorAccessRoute(message: string): boolean {
-  return message.includes("returned the app page instead of JSON");
+function isMissingDoorAccessRoute(message: string | undefined): boolean {
+  return Boolean(message?.includes("returned the app page instead of JSON"));
 }
 
 function mapAccessDoorToTarget(door: AccessDoorApiTarget): DoorAccessTarget {
