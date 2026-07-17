@@ -504,11 +504,18 @@ function mapDevicePorts(
     const connectedName = getPortEndpointName(portObject, connectedClient, macs, state);
     const connectedMac = getClientMac(connectedClient) || macs[0] || "";
     const connectedIp = connectedClient ? getClientIp(connectedClient) : getPortEndpointIp(portObject);
+    const hasEndpointEvidence = hasPortEndpointEvidence(portObject, connectedClient, macs, state);
     const endpointSource = firstRecordWithValues(
       connectedClient,
       asRecord(portObject.connectedDevice),
       asRecord(portObject.connectedClient),
-      portObject,
+      asRecord(portObject.lldp),
+      asRecord(portObject.access),
+      asRecord(portObject.accessDevice),
+      asRecord(portObject.accessHub),
+      asRecord(portObject.uaHub),
+      asRecord(portObject.door),
+      asRecord(portObject.reader),
     );
 
     return {
@@ -519,7 +526,7 @@ function mapDevicePorts(
       importedEndpointName: connectedName || "Unknown",
       connectedMac,
       connectedIp,
-      endpointType: inferEndpointType(connectedName, endpointSource),
+      endpointType: hasEndpointEvidence ? inferEndpointType(connectedName, endpointSource) : "",
       endpointLocation: getEndpointLocation(endpointSource),
       endpointOwner: getEndpointOwner(endpointSource),
       endpointVendor: getEndpointVendor(endpointSource),
@@ -557,7 +564,6 @@ function buildClientsByPort(clients: unknown[]): Map<string, Record<string, unkn
     const lastUplink = asRecord(clientObject.lastUplink);
     const lastUplinkSnake = asRecord(clientObject.last_uplink);
     const deviceIds = uniqueStrings([
-      getString(clientObject, "_id"),
       getString(clientObject, "uplinkDeviceId"),
       getString(clientObject, "uplink_device_id"),
       getString(clientObject, "uplinkSourceId"),
@@ -866,51 +872,55 @@ function getPortEndpointName(
 
   return (
     getClientName(client) ||
-    getString(connectedDevice, "name") ||
-    getString(connectedDevice, "hostname") ||
-    getString(connectedClient, "name") ||
-    getString(connectedClient, "hostname") ||
-    getString(accessHub, "name") ||
-    getString(accessHub, "displayName") ||
-    getString(accessHub, "display_name") ||
-    getString(uaHub, "name") ||
-    getString(uaHub, "displayName") ||
-    getString(uaHub, "display_name") ||
-    getString(accessDevice, "name") ||
-    getString(accessDevice, "displayName") ||
-    getString(accessDevice, "display_name") ||
-    getString(access, "name") ||
-    getString(access, "displayName") ||
-    getString(access, "display_name") ||
-    getString(reader, "name") ||
-    getString(reader, "displayName") ||
-    getString(door, "name") ||
-    getString(door, "displayName") ||
-    getString(lldp, "systemName") ||
-    getString(lldp, "system_name") ||
-    getString(macEntry, "name") ||
-    getString(macEntry, "hostname") ||
+    getSpecificManagedEndpointName(
+      getString(connectedDevice, "name"),
+      getString(connectedDevice, "hostname"),
+      getString(connectedClient, "name"),
+      getString(connectedClient, "hostname"),
+      getString(accessHub, "name"),
+      getString(accessHub, "displayName"),
+      getString(accessHub, "display_name"),
+      getString(uaHub, "name"),
+      getString(uaHub, "displayName"),
+      getString(uaHub, "display_name"),
+      getString(accessDevice, "name"),
+      getString(accessDevice, "displayName"),
+      getString(accessDevice, "display_name"),
+      getString(access, "name"),
+      getString(access, "displayName"),
+      getString(access, "display_name"),
+      getString(reader, "name"),
+      getString(reader, "displayName"),
+      getString(door, "name"),
+      getString(door, "displayName"),
+      getString(lldp, "systemName"),
+      getString(lldp, "system_name"),
+      getString(macEntry, "name"),
+      getString(macEntry, "hostname"),
+    ) ||
     (hasEndpointEvidence
       ? accessEndpointName ||
-        getString(port, "uaHubName") ||
-        getString(port, "ua_hub_name") ||
-        getString(port, "accessHubName") ||
-        getString(port, "access_hub_name") ||
-        getString(port, "accessDeviceName") ||
-        getString(port, "access_device_name") ||
-        getString(port, "readerName") ||
-        getString(port, "reader_name") ||
-        getString(port, "doorName") ||
-        getString(port, "door_name") ||
-        getString(port, "connectedTo") ||
-        getString(port, "connected_to") ||
-        getString(port, "connectedDeviceName") ||
-        getString(port, "connected_device_name") ||
-        getString(port, "clientName") ||
-        getString(port, "client_name") ||
-        getString(port, "hostname") ||
-        getAccessEndpointName(port) ||
-        getConfiguredPortEndpointName(port, state)
+        getSpecificManagedEndpointName(
+          getString(port, "uaHubName"),
+          getString(port, "ua_hub_name"),
+          getString(port, "accessHubName"),
+          getString(port, "access_hub_name"),
+          getString(port, "accessDeviceName"),
+          getString(port, "access_device_name"),
+          getString(port, "readerName"),
+          getString(port, "reader_name"),
+          getString(port, "doorName"),
+          getString(port, "door_name"),
+          getString(port, "connectedTo"),
+          getString(port, "connected_to"),
+          getString(port, "connectedDeviceName"),
+          getString(port, "connected_device_name"),
+          getString(port, "clientName"),
+          getString(port, "client_name"),
+          getString(port, "hostname"),
+          getAccessEndpointName(port),
+          getConfiguredPortEndpointName(port, state),
+        )
       : "") ||
     macs[0] ||
     formatUnknownPortEndpoint(state)
@@ -940,6 +950,10 @@ function hasPortEndpointEvidence(
   if (evidenceRecords.some((record) => Object.keys(record).length > 0)) return true;
 
   return hasActivePoeDraw(port) || hasActiveLinkSpeed(port);
+}
+
+function getSpecificManagedEndpointName(...values: string[]): string {
+  return values.find((value) => value && !isGenericManagedEndpointName(value)) || "";
 }
 
 function getConfiguredPortEndpointName(port: Record<string, unknown>, state: string): string {
@@ -1092,7 +1106,7 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     getString(client, "user_friendly_name")
   ].filter(Boolean);
 
-  return candidates.find((candidate) => !isGenericManagedEndpointName(candidate)) || candidates[0] || "";
+  return candidates.find((candidate) => !isGenericManagedEndpointName(candidate)) || "";
 }
 
 function getPreferredAccessEndpointName(...sources: Array<Record<string, unknown> | undefined>): string {
@@ -1103,7 +1117,7 @@ function getPreferredAccessEndpointName(...sources: Array<Record<string, unknown
   ).map(normalizeAccessDisplayName);
   const specificName = candidates.find((candidate) => candidate && !isGenericAccessDisplayName(candidate));
 
-  return specificName || candidates[0] || "";
+  return specificName || "";
 }
 
 function collectAccessNameCandidates(source: Record<string, unknown>): string[] {

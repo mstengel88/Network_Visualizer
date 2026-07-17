@@ -1008,10 +1008,11 @@ function mergeSyncedPorts(existingPorts: Device["ports"], syncedPorts: Device["p
       patchConnection: existingPort.patchConnection || syncedPort.patchConnection,
       wireUse: existingPort.wireUse ?? syncedPort.wireUse,
       wireColor: existingPort.wireColor ?? syncedPort.wireColor,
-      endpointType: syncedPortIsOpen ? syncedPort.endpointType : existingPort.endpointType ?? syncedPort.endpointType,
-      endpointLocation: syncedPortIsOpen ? syncedPort.endpointLocation : existingPort.endpointLocation ?? syncedPort.endpointLocation,
-      endpointOwner: syncedPortIsOpen ? syncedPort.endpointOwner : existingPort.endpointOwner ?? syncedPort.endpointOwner,
-      endpointNotes: syncedPortIsOpen ? syncedPort.endpointNotes : existingPort.endpointNotes ?? syncedPort.endpointNotes,
+      endpointType: syncedPortIsOpen ? "" : existingPort.endpointType ?? syncedPort.endpointType,
+      endpointLocation: syncedPortIsOpen ? "" : existingPort.endpointLocation ?? syncedPort.endpointLocation,
+      endpointOwner: syncedPortIsOpen ? "" : existingPort.endpointOwner ?? syncedPort.endpointOwner,
+      endpointVendor: syncedPortIsOpen ? "" : existingPort.endpointVendor ?? syncedPort.endpointVendor,
+      endpointNotes: syncedPortIsOpen ? "" : existingPort.endpointNotes ?? syncedPort.endpointNotes,
       importedEndpointName:
         getResolvedSyncedImportedEndpointName(existingPort, syncedPort),
     };
@@ -1030,7 +1031,7 @@ function getResolvedSyncedConnectedTo(
   existingPort: Device["ports"][number],
   syncedPort: Device["ports"][number],
 ): string | undefined {
-  if (isOpenSyncedPort(syncedPort)) return syncedPort.connectedTo || "Open";
+  if (isOpenSyncedPort(syncedPort)) return "Open";
   return getUsefulSyncedEndpointName(syncedPort) ?? existingPort.connectedTo ?? syncedPort.connectedTo;
 }
 
@@ -1038,7 +1039,7 @@ function getResolvedSyncedImportedEndpointName(
   existingPort: Device["ports"][number],
   syncedPort: Device["ports"][number],
 ): string | undefined {
-  if (isOpenSyncedPort(syncedPort)) return syncedPort.importedEndpointName || syncedPort.connectedTo || "Open";
+  if (isOpenSyncedPort(syncedPort)) return "Open";
   return getUsefulSyncedEndpointName(syncedPort) ?? existingPort.importedEndpointName;
 }
 
@@ -3001,7 +3002,7 @@ function getFaceplatePortClass(port: Device["ports"][number], device?: Device): 
   if (isGigabitEthernetPort(port)) return "port-gbe";
   if (value.includes("open")) return "port-open";
   if (value.includes("poe")) return "port-poe";
-  if (port.connectedTo && !value.includes("no client reported")) return "port-active";
+  if (isUsableEndpointLabel(formatConnectionLabel(port.connectedTo))) return "port-active";
   if (value.includes("link up")) return "port-link";
   return "port-open";
 }
