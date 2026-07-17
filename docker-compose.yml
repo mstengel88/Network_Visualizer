@@ -7,5 +7,7 @@ services:
       - "5173:5173"
     environment:
       - DOOR_ACCESS_PASSWORD=${DOOR_ACCESS_PASSWORD:-}
+      - UNIFI_ACCESS_URL=${UNIFI_ACCESS_URL:-}
+      - UNIFI_ACCESS_TOKEN=${UNIFI_ACCESS_TOKEN:-}
     volumes:
       - ./data:/app/.data

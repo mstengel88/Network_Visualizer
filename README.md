@@ -66,9 +66,11 @@ The **Doors** page is password protected by the server. Set `DOOR_ACCESS_PASSWOR
 
 ```sh
 DOOR_ACCESS_PASSWORD=your-strong-password-here
+UNIFI_ACCESS_URL=https://YOUR-UNIFI-CONSOLE-IP:12455
+UNIFI_ACCESS_TOKEN=your-unifi-access-api-token
 ```
 
-The page can find door-reader and card-terminal endpoints from the current rack data and show quick buzz controls. The buzz action is intentionally protected behind `/api/access/buzz`; wire that backend route to a verified UniFi Access unlock endpoint before using it to open doors.
+The page loads real doors from the UniFi Access developer API when `UNIFI_ACCESS_URL` and `UNIFI_ACCESS_TOKEN` are configured. Use the local OpenAPI URL shown by your Access application; some Access versions/examples use port `12445` while newer UniFi docs list OpenAPI on `12455`. If those values are missing, the page only shows rack-derived Door Reader and Card Terminal candidates and the buzz buttons stay disabled.
 
 ## Move your current rack plan to the Pi
 

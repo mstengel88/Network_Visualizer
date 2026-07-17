@@ -3842,6 +3842,16 @@ type DoorAccessTarget = {
   portLabel: string;
   ip: string;
   mac: string;
+  status?: string;
+  source: "access" | "rack";
+};
+
+type AccessDoorApiTarget = {
+  id: string;
+  name: string;
+  status?: string;
+  lockStatus?: string;
+  rawType?: string;
 };
 
 function DoorAccessPage({
@@ -3857,7 +3867,18 @@ function DoorAccessPage({
   const [sessionToken, setSessionToken] = useState("");
   const [notice, setNotice] = useState("Enter the door access password to show buzz controls.");
   const [isBusy, setIsBusy] = useState(false);
-  const targets = useMemo(() => getDoorAccessTargets(devices, racks), [devices, racks]);
+  const [accessDoors, setAccessDoors] = useState<AccessDoorApiTarget[]>([]);
+  const localTargets = useMemo(() => getDoorAccessTargets(devices, racks), [devices, racks]);
+  const targets = accessDoors.length ? accessDoors.map(mapAccessDoorToTarget) : localTargets;
+
+  useEffect(() => {
+    if (!sessionToken) {
+      setAccessDoors([]);
+      return;
+    }
+
+    void loadAccessDoors(sessionToken);
+  }, [sessionToken]);
 
   async function handleUnlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3878,7 +3899,7 @@ function DoorAccessPage({
 
       setSessionToken(result.data.token);
       setPassword("");
-      setNotice("Door access controls are unlocked for this browser session.");
+      setNotice("Door access controls are unlocked. Loading UniFi Access doors...");
     } catch (error) {
       setSessionToken("");
       setNotice(error instanceof Error ? error.message : "Door access login failed");
@@ -3889,6 +3910,11 @@ function DoorAccessPage({
 
   async function handleBuzz(target: DoorAccessTarget) {
     if (!sessionToken) return;
+    if (target.source !== "access") {
+      setNotice("This is a rack-derived door candidate. Configure UniFi Access API to buzz real doors.");
+      return;
+    }
+
     const confirmed = window.confirm(`Buzz ${target.name}?`);
     if (!confirmed) return;
 
@@ -3915,13 +3941,43 @@ function DoorAccessPage({
     }
   }
 
+  async function loadAccessDoors(token: string) {
+    setIsBusy(true);
+
+    try {
+      const response = await fetch("/api/access/doors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const result = await response.json() as { ok: boolean; message: string; data?: AccessDoorApiTarget[] };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "Could not load UniFi Access doors");
+      }
+
+      const doors = (result.data ?? []).filter((door) => door.id && door.name);
+      setAccessDoors(doors);
+      setNotice(doors.length ? `Loaded ${doors.length} UniFi Access door${doors.length === 1 ? "" : "s"}.` : "No UniFi Access doors were returned.");
+    } catch (error) {
+      setAccessDoors([]);
+      setNotice(error instanceof Error ? `${error.message} Showing rack-derived door candidates only.` : "Could not load UniFi Access doors.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   return (
     <section className="door-access-page" aria-label="Door access controls">
       <div className="door-access-hero">
         <div>
           <p className="eyebrow">{businessName}</p>
           <h2>Door buzz controls</h2>
-          <span>{targets.length} possible door access endpoints found in this business.</span>
+          <span>
+            {accessDoors.length
+              ? `${accessDoors.length} UniFi Access doors loaded from the controller.`
+              : `${targets.length} rack-derived door candidates found in this business.`}
+          </span>
         </div>
         <ShieldCheck size={28} />
       </div>
@@ -3966,13 +4022,15 @@ function DoorAccessPage({
                 {target.deviceName} · {target.portLabel} · {target.type}
               </span>
               <small>
-                {target.ip || "No IP"} · {target.mac || "No MAC"}
+                {target.source === "access"
+                  ? [target.status, target.ip || target.mac].filter(Boolean).join(" · ") || "UniFi Access door"
+                  : `${target.ip || "No IP"} · ${target.mac || "No MAC"}`}
               </small>
             </div>
             <button
               className="door-buzz-button"
               type="button"
-              disabled={!sessionToken || isBusy}
+              disabled={!sessionToken || isBusy || target.source !== "access"}
               onClick={() => void handleBuzz(target)}
             >
               <Power size={18} />
@@ -3994,7 +4052,6 @@ function DoorAccessPage({
 function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessTarget[] {
   const rackIds = new Set(racks.map((rack) => rack.id));
   const racksById = new Map(racks.map((rack) => [rack.id, rack]));
-  const doorTerms = /\b(ua|access|door|reader|card|terminal|ultra|intercom)\b/i;
 
   return devices
     .filter((device) => rackIds.has(device.rackId))
@@ -4003,17 +4060,7 @@ function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessT
 
       return getPhysicalFaceplatePorts(device)
         .filter((port) => {
-          const label = [
-            port.endpointType,
-            port.importedEndpointName,
-            port.connectedTo,
-            port.endpointOwner,
-            port.endpointLocation,
-            port.endpointVendor,
-            port.endpointNotes,
-          ].join(" ");
-
-          return port.endpointType === "door-reader" || port.endpointType === "card-terminal" || doorTerms.test(label);
+          return port.endpointType === "door-reader" || port.endpointType === "card-terminal";
         })
         .map((port) => ({
           id: `${device.id}:${port.id}`,
@@ -4024,6 +4071,7 @@ function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessT
           portLabel: port.label,
           ip: port.connectedIp ?? "",
           mac: port.connectedMac ?? "",
+          source: "rack" as const,
         }));
     })
     .filter((target, index, list) => {
@@ -4031,6 +4079,21 @@ function getDoorAccessTargets(devices: Device[], racks: RackType[]): DoorAccessT
       return list.findIndex((item) => `${item.name}|${item.mac}|${item.ip}|${item.deviceName}|${item.portLabel}` === key) === index;
     })
     .sort((left, right) => left.rackName.localeCompare(right.rackName) || left.name.localeCompare(right.name));
+}
+
+function mapAccessDoorToTarget(door: AccessDoorApiTarget): DoorAccessTarget {
+  return {
+    id: door.id,
+    name: door.name,
+    type: "UniFi Access door",
+    rackName: "UniFi Access",
+    deviceName: door.rawType || "Door",
+    portLabel: door.lockStatus || "Buzz",
+    ip: "",
+    mac: "",
+    status: [door.status, door.lockStatus].filter(Boolean).join(" · "),
+    source: "access",
+  };
 }
 
 function getReportDeviceName(port: Device["ports"][number]): string {
