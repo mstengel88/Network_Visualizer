@@ -16,6 +16,7 @@ export default defineConfig({
     {
       name: "unifi-dev-proxy",
       configureServer(server) {
+        registerAccessRoutes(server.middlewares);
         const accessSessions = new Map<string, number>();
 
         server.middlewares.use("/api/unifi/test", async (req, res) => {
