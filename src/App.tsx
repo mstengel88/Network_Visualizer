@@ -462,6 +462,20 @@ function App() {
     setSaveNotice("Downloaded plan JSON export");
   }
 
+  function handleExportDiagnostics() {
+    const diagnostics = createPortDiagnosticsExport({
+      business,
+      selectedRack,
+      visibleRacks,
+      devices: inventory.devices,
+    });
+    downloadJsonFile(
+      diagnostics,
+      `port-diagnostics-${toSafeFilePart(business.name)}-${toSafeFilePart(selectedRack?.name ?? "all-racks")}.json`,
+    );
+    setSaveNotice(`Downloaded diagnostics for ${diagnostics.ports.length} ports; ${diagnostics.suspectPorts.length} suspect ports flagged`);
+  }
+
   async function handleOpenSavedPlans() {
     setShowPlanLibrary(true);
     setIsLoadingPlans(true);
@@ -768,6 +782,9 @@ function App() {
             </button>
             <button title="Export plan JSON" aria-label="Export plan JSON" onClick={handleExportPlan}>
               <Download size={18} />
+            </button>
+            <button title="Export port diagnostics" aria-label="Export port diagnostics" onClick={handleExportDiagnostics}>
+              <FileJson size={18} />
             </button>
             <button title="Restore plan JSON" aria-label="Restore plan JSON" onClick={() => fileInputRef.current?.click()}>
               <UploadCloud size={18} />
@@ -3790,6 +3807,132 @@ function formatSavedAt(value: string): string {
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString();
+}
+
+function createPortDiagnosticsExport({
+  business,
+  selectedRack,
+  visibleRacks,
+  devices,
+}: {
+  business: { id: string; name: string };
+  selectedRack: RackType | undefined;
+  visibleRacks: RackType[];
+  devices: Device[];
+}) {
+  const visibleRackIds = new Set(visibleRacks.map((rack) => rack.id));
+  const racksById = new Map(visibleRacks.map((rack) => [rack.id, rack]));
+  const exportedDevices = devices
+    .filter((device) => visibleRackIds.has(device.rackId))
+    .sort((left, right) => {
+      const leftRack = racksById.get(left.rackId)?.name ?? "";
+      const rightRack = racksById.get(right.rackId)?.name ?? "";
+      return leftRack.localeCompare(rightRack) || left.uStart - right.uStart || left.name.localeCompare(right.name);
+    });
+  const ports = exportedDevices.flatMap((device) => {
+    const rack = racksById.get(device.rackId);
+
+    return getPhysicalFaceplatePorts(device).map((port) => {
+      const endpointDisplay = getPortEndpointDisplay(port);
+      const connectedDisplay = getConnectedEndpointDisplay(port);
+      const isOpen = !isUsableEndpointLabel(formatConnectionLabel(port.connectedTo));
+      const diagnostic = {
+        businessId: business.id,
+        businessName: business.name,
+        rackId: device.rackId,
+        rackName: rack?.name ?? "Unknown rack",
+        rackSite: rack?.site ?? "Unknown site",
+        deviceId: device.id,
+        deviceName: device.name,
+        deviceModel: device.model,
+        deviceType: device.type,
+        portId: port.id,
+        portLabel: port.label,
+        portNumber: getPortSortNumber(port),
+        speed: port.speed,
+        connectedTo: port.connectedTo ?? "",
+        importedEndpointName: port.importedEndpointName ?? "",
+        endpointDisplay,
+        connectedDisplay,
+        endpointType: port.endpointType ?? "",
+        connectedIp: port.connectedIp ?? "",
+        connectedMac: port.connectedMac ?? "",
+        patchConnection: port.patchConnection ?? "",
+        wireUse: port.wireUse ?? "",
+        isOpen,
+        faceplateClass: getFaceplatePortClass(port, device),
+        suspectReasons: getPortDiagnosticSuspectReasons(port, device),
+        uniFiDiagnostics: port.diagnostics ?? null,
+      };
+
+      return diagnostic;
+    });
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    business: {
+      id: business.id,
+      name: business.name,
+    },
+    selectedRack: selectedRack
+      ? {
+          id: selectedRack.id,
+          name: selectedRack.name,
+          site: selectedRack.site,
+        }
+      : null,
+    racks: visibleRacks.map((rack) => ({
+      id: rack.id,
+      name: rack.name,
+      site: rack.site,
+      sizeU: rack.sizeU,
+    })),
+    summary: {
+      devices: exportedDevices.length,
+      ports: ports.length,
+      suspectPorts: ports.filter((port) => port.suspectReasons.length > 0).length,
+    },
+    suspectPorts: ports.filter((port) => port.suspectReasons.length > 0),
+    ports,
+  };
+}
+
+function getPortDiagnosticSuspectReasons(port: Device["ports"][number], device: Device): string[] {
+  const reasons: string[] = [];
+  const connectedLabel = formatConnectionLabel(port.connectedTo);
+  const endpointDisplay = getPortEndpointDisplay(port);
+  const isOpen = !isUsableEndpointLabel(connectedLabel);
+  const faceplateClass = getFaceplatePortClass(port, device);
+  const uniFiDiagnostics = port.diagnostics;
+
+  if (isOpen && faceplateClass !== "port-open") reasons.push("renders-active-while-open");
+  if (!isOpen && !endpointDisplay) reasons.push("active-without-display-name");
+  if (isGenericAccessEndpointName(connectedLabel)) reasons.push("generic-access-or-camera-name");
+  if (uniFiDiagnostics?.matchedBy === "port") reasons.push("matched-by-port-index");
+  if (uniFiDiagnostics && !uniFiDiagnostics.hasEndpointEvidence && !isOpen) reasons.push("no-endpoint-evidence");
+  if (port.patchConnection && isOpen) reasons.push("patch-link-to-open-port");
+  if (port.connectedTo && port.importedEndpointName && port.connectedTo !== port.importedEndpointName) {
+    reasons.push("connected-name-differs-from-imported-name");
+  }
+
+  return reasons;
+}
+
+function downloadJsonFile(value: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function toSafeFilePart(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "rack";
 }
 
 export default App;

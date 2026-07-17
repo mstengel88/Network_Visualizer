@@ -47,6 +47,26 @@ export type Port = {
   stp?: string;
   wireUse?: string;
   wireColor?: string;
+  diagnostics?: PortDiagnostics;
+};
+
+export type PortDiagnostics = {
+  portIndex: string;
+  portLabel: string;
+  state: string;
+  rawPortName?: string;
+  rawPortKeys: string[];
+  rawPort: unknown;
+  macs: string[];
+  matchedBy: "mac" | "port" | "none";
+  matchedClientName?: string;
+  matchedClientIp?: string;
+  matchedClientMacs: string[];
+  matchedClientKeys: string[];
+  matchedClient?: unknown;
+  hasEndpointEvidence: boolean;
+  selectedEndpointName: string;
+  endpointType: string;
 };
 
 export type Device = {

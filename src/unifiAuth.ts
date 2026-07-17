@@ -500,9 +500,10 @@ function mapDevicePorts(
     const poe = asRecord(portObject.poe);
     const poeState = getString(portObject, "poe_mode") || getString(poe, "state") || getString(poe, "mode");
     const macs = getPortMacs(portObject);
-    const connectedClient =
-      macs.map((mac) => clientsByMac.get(normalizeMac(mac))).find(Boolean) ||
-      findClientByPort(device, idx, clientsByPort);
+    const macMatchedClient = macs.map((mac) => clientsByMac.get(normalizeMac(mac))).find(Boolean);
+    const portMatchedClient = macMatchedClient ? undefined : findClientByPort(device, idx, clientsByPort);
+    const connectedClient = macMatchedClient || portMatchedClient;
+    const matchedBy = macMatchedClient ? "mac" : portMatchedClient ? "port" : "none";
     const portName = getString(portObject, "name");
     const label = getPortDisplayLabel(idx, portName, connector);
     const connectedName = getPortEndpointName(portObject, connectedClient, macs, state);
@@ -536,8 +537,73 @@ function mapDevicePorts(
       endpointVendor: getEndpointVendor(endpointSource),
       poeMode: poeState,
       stp: getString(portObject, "stp_pathcost") ? "STP" : undefined,
+      diagnostics: buildPortDiagnostics({
+        port: portObject,
+        idx,
+        label,
+        state,
+        macs,
+        connectedClient,
+        matchedBy,
+        hasEndpointEvidence,
+        selectedEndpointName: connectedName,
+        endpointType: hasEndpointEvidence ? inferEndpointType(connectedName, endpointSource) : "",
+      }),
     };
   });
+}
+
+function buildPortDiagnostics({
+  port,
+  idx,
+  label,
+  state,
+  macs,
+  connectedClient,
+  matchedBy,
+  hasEndpointEvidence,
+  selectedEndpointName,
+  endpointType,
+}: {
+  port: Record<string, unknown>;
+  idx: string;
+  label: string;
+  state: string;
+  macs: string[];
+  connectedClient: Record<string, unknown> | undefined;
+  matchedBy: "mac" | "port" | "none";
+  hasEndpointEvidence: boolean;
+  selectedEndpointName: string;
+  endpointType: string;
+}) {
+  return {
+    portIndex: idx,
+    portLabel: label,
+    state,
+    rawPortName: getString(port, "name") || getString(port, "portName") || getString(port, "port_name"),
+    rawPortKeys: Object.keys(port).sort(),
+    rawPort: toDiagnosticJson(port),
+    macs,
+    matchedBy,
+    matchedClientName: getClientName(connectedClient),
+    matchedClientIp: getClientIp(connectedClient),
+    matchedClientMacs: connectedClient ? getMacCandidates(connectedClient) : [],
+    matchedClientKeys: connectedClient ? Object.keys(connectedClient).sort() : [],
+    matchedClient: connectedClient ? toDiagnosticJson(connectedClient) : undefined,
+    hasEndpointEvidence,
+    selectedEndpointName,
+    endpointType,
+  };
+}
+
+function toDiagnosticJson(value: unknown, depth = 0): unknown {
+  if (depth > 3) return "[depth limit]";
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value;
+  if (Array.isArray(value)) return value.slice(0, 25).map((item) => toDiagnosticJson(item, depth + 1));
+  if (typeof value !== "object") return undefined;
+
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 100);
+  return Object.fromEntries(entries.map(([key, item]) => [key, toDiagnosticJson(item, depth + 1)]));
 }
 
 function buildClientsByMac(clients: unknown[]): Map<string, Record<string, unknown>> {
