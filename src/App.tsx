@@ -3952,7 +3952,8 @@ function DoorAccessPage({
         throw new Error(result.message || "Could not load UniFi Access doors");
       }
 
-      const doors = (result.data ?? []).filter((door) => door.id && door.name);
+      const rawDoors = Array.isArray(result.data) ? result.data : result.data ? [result.data] : [];
+      const doors = rawDoors.filter((door) => door.id && door.name);
       setAccessDoors(doors);
       setNotice(doors.length ? `Loaded ${doors.length} UniFi Access door${doors.length === 1 ? "" : "s"}.` : "No UniFi Access doors were returned.");
     } catch (error) {
@@ -4118,10 +4119,16 @@ async function readDoorAccessResponse<T = unknown>(
   const payload = await response.json() as unknown;
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     const record = payload as { ok?: unknown; message?: unknown; data?: unknown };
+    const data = extractDoorAccessPayload(record);
     return {
       ok: typeof record.ok === "boolean" ? record.ok : response.ok,
-      message: typeof record.message === "string" ? record.message : `${path} returned JSON without a message`,
-      data: record.data as T | undefined,
+      message:
+        typeof record.message === "string"
+          ? record.message
+          : response.ok
+            ? `${path} returned raw UniFi Access JSON`
+            : `${path} returned HTTP ${response.status} JSON without a message`,
+      data: data as T | undefined,
     };
   }
 
@@ -4130,6 +4137,23 @@ async function readDoorAccessResponse<T = unknown>(
     message: `${path} returned raw JSON instead of an API response`,
     data: payload as T,
   };
+}
+
+function extractDoorAccessPayload(record: Record<string, unknown>): unknown {
+  const candidates = [
+    record.data,
+    record.doors,
+    record.items,
+    record.results,
+    record.result,
+  ];
+  const arrayValue = candidates.find(Array.isArray);
+  if (arrayValue) return arrayValue;
+
+  const objectValue = candidates.find((candidate) => candidate && typeof candidate === "object");
+  if (objectValue) return objectValue;
+
+  return record;
 }
 
 function isMissingDoorAccessRoute(message: string | undefined): boolean {
