@@ -378,6 +378,7 @@ function registerAccessRoutes(middlewares: {
       data: {
         hasUrl: Boolean(config.baseUrl),
         accessHost: getSafeUrlHost(config.baseUrl),
+        candidateHosts: getUniFiAccessBaseUrlCandidates(config.baseUrl).map(getSafeUrlHost),
         hasToken: Boolean(config.apiToken),
         endpoint: "/api/v1/developer/doors",
       },
@@ -424,8 +425,9 @@ async function handleAccessDoorsRequest(
         return;
       }
 
-      const result = await requestUniFiAccessJson(
-        `${config.baseUrl}/api/v1/developer/doors`,
+      const result = await requestFirstUniFiAccessJson(
+        getUniFiAccessBaseUrlCandidates(config.baseUrl),
+        "/api/v1/developer/doors",
         "GET",
         config.apiToken,
       );
@@ -488,8 +490,9 @@ async function handleAccessBuzzRequest(
         return;
       }
 
-      const result = await requestUniFiAccessJson(
-        `${config.baseUrl}/api/v1/developer/doors/${encodeURIComponent(request.doorId)}/unlock`,
+      const result = await requestFirstUniFiAccessJson(
+        getUniFiAccessBaseUrlCandidates(config.baseUrl),
+        `/api/v1/developer/doors/${encodeURIComponent(request.doorId)}/unlock`,
         "PUT",
         config.apiToken,
       );
@@ -594,6 +597,25 @@ function describeAccessConfigProblem(
   }
 
   return null;
+}
+
+function getUniFiAccessBaseUrlCandidates(baseUrl: string): string[] {
+  const candidates = [baseUrl];
+
+  try {
+    const url = new URL(baseUrl);
+    const originalPort = url.port;
+    for (const port of ["12445", "12455"]) {
+      if (originalPort === port) continue;
+      const alternate = new URL(url.toString());
+      alternate.port = port;
+      candidates.push(alternate.toString().replace(/\/+$/, ""));
+    }
+  } catch {
+    return candidates;
+  }
+
+  return uniqueStrings(candidates.map((candidate) => candidate.replace(/\/+$/, "")));
 }
 
 function getSafeUrlHost(value: string): string {
@@ -1144,6 +1166,31 @@ function requestUniFiAccessJson(
     });
     request.end();
   });
+}
+
+async function requestFirstUniFiAccessJson(
+  baseUrls: string[],
+  pathSuffix: string,
+  method: "GET" | "PUT",
+  apiToken: string,
+): Promise<{ ok: boolean; message: string; data?: unknown }> {
+  const failures: string[] = [];
+
+  for (const baseUrl of baseUrls) {
+    const result = await requestUniFiAccessJson(`${baseUrl}${pathSuffix}`, method, apiToken);
+    if (result.ok) {
+      return {
+        ...result,
+        message: `${result.message} via ${getSafeUrlHost(baseUrl)}`,
+      };
+    }
+    failures.push(`${getSafeUrlHost(baseUrl)}: ${result.message}`);
+  }
+
+  return {
+    ok: false,
+    message: `Tried ${failures.join("; ")}`,
+  };
 }
 
 async function requestConnectorJson(
