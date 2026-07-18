@@ -1164,70 +1164,70 @@ function getClientName(client: Record<string, unknown> | undefined): string {
     display,
   );
 
-  const candidates = [
-    accessEndpointName ||
-      getString(client, "fixedName") ||
-    getString(client, "fixed_name") ||
-    getString(client, "userName") ||
-    getString(client, "user_name") ||
-    getString(client, "uiName") ||
-    getString(client, "ui_name") ||
-    getString(client, "nickname") ||
-    getString(ucoreDevice, "name") ||
-    getString(ucoreDevice, "displayName") ||
-    getString(ucoreDevice, "display_name") ||
-    getString(client, "name") ||
-    getString(client, "display_name") ||
-    getString(client, "displayName") ||
-    getString(client, "label") ||
-    getString(client, "alias") ||
-    getString(client, "hostname") ||
-    getString(client, "hostnameOrIp") ||
-    getString(client, "host_name") ||
-    getString(client, "hostName") ||
-    getString(client, "clientName") ||
-    getString(client, "client_name") ||
-    getString(client, "deviceName") ||
-    getString(client, "device_name") ||
-    getAccessEndpointName(client) ||
-    getString(client, "uaHubName") ||
-    getString(client, "ua_hub_name") ||
-    getString(client, "accessHubName") ||
-    getString(client, "access_hub_name") ||
-    getString(client, "accessDeviceName") ||
-    getString(client, "access_device_name") ||
-    getString(client, "readerName") ||
-    getString(client, "reader_name") ||
-    getString(client, "doorName") ||
-    getString(client, "door_name") ||
-    getString(user, "name") ||
-    getString(user, "displayName") ||
-    getString(device, "name") ||
-    getString(device, "displayName") ||
-    getString(display, "name") ||
-    getString(display, "label") ||
-    getString(ucoreDevice, "computed_model") ||
-    getString(ucoreDevice, "product_model") ||
-    getString(ucoreDevice, "product_shortname") ||
-    getString(accessHub, "name") ||
-    getString(accessHub, "displayName") ||
-    getString(accessHub, "display_name") ||
-    getString(uaHub, "name") ||
-    getString(uaHub, "displayName") ||
-    getString(uaHub, "display_name") ||
-    getString(accessDevice, "name") ||
-    getString(accessDevice, "displayName") ||
-    getString(accessDevice, "display_name") ||
-    getString(access, "name") ||
-    getString(access, "displayName") ||
-    getString(access, "display_name") ||
-    getString(reader, "name") ||
-    getString(reader, "displayName") ||
-    getString(door, "name") ||
-    getString(door, "displayName") ||
-    getString(client, "userFriendlyName") ||
-    getString(client, "user_friendly_name")
-  ].filter(Boolean);
+  const candidates = uniqueStrings([
+    accessEndpointName,
+    getString(client, "fixedName"),
+    getString(client, "fixed_name"),
+    getString(client, "userName"),
+    getString(client, "user_name"),
+    getString(client, "uiName"),
+    getString(client, "ui_name"),
+    getString(client, "nickname"),
+    getString(ucoreDevice, "name"),
+    getString(ucoreDevice, "displayName"),
+    getString(ucoreDevice, "display_name"),
+    getString(client, "display_name"),
+    getString(client, "displayName"),
+    getString(client, "label"),
+    getString(client, "alias"),
+    getString(client, "hostname"),
+    getString(client, "hostnameOrIp"),
+    getString(client, "host_name"),
+    getString(client, "hostName"),
+    getString(client, "clientName"),
+    getString(client, "client_name"),
+    getString(client, "deviceName"),
+    getString(client, "device_name"),
+    getAccessEndpointName(client),
+    getString(client, "uaHubName"),
+    getString(client, "ua_hub_name"),
+    getString(client, "accessHubName"),
+    getString(client, "access_hub_name"),
+    getString(client, "accessDeviceName"),
+    getString(client, "access_device_name"),
+    getString(client, "readerName"),
+    getString(client, "reader_name"),
+    getString(client, "doorName"),
+    getString(client, "door_name"),
+    getString(user, "name"),
+    getString(user, "displayName"),
+    getString(device, "name"),
+    getString(device, "displayName"),
+    getString(display, "name"),
+    getString(display, "label"),
+    getString(accessHub, "name"),
+    getString(accessHub, "displayName"),
+    getString(accessHub, "display_name"),
+    getString(uaHub, "name"),
+    getString(uaHub, "displayName"),
+    getString(uaHub, "display_name"),
+    getString(accessDevice, "name"),
+    getString(accessDevice, "displayName"),
+    getString(accessDevice, "display_name"),
+    getString(access, "name"),
+    getString(access, "displayName"),
+    getString(access, "display_name"),
+    getString(reader, "name"),
+    getString(reader, "displayName"),
+    getString(door, "name"),
+    getString(door, "displayName"),
+    getString(client, "userFriendlyName"),
+    getString(client, "user_friendly_name"),
+    getString(client, "name"),
+    getString(ucoreDevice, "computed_model"),
+    getString(ucoreDevice, "product_model"),
+    getString(ucoreDevice, "product_shortname"),
+  ]);
 
   return candidates.find((candidate) => !isGenericManagedEndpointName(candidate)) || "";
 }
