@@ -4118,16 +4118,17 @@ async function readDoorAccessResponse<T = unknown>(
 
   const payload = await response.json() as unknown;
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const record = payload as { ok?: unknown; message?: unknown; data?: unknown };
+    const record = payload as Record<string, unknown> & { ok?: unknown; message?: unknown; data?: unknown };
     const data = extractDoorAccessPayload(record);
+    const message = getDoorAccessMessage(record);
     return {
       ok: typeof record.ok === "boolean" ? record.ok : response.ok,
       message:
-        typeof record.message === "string"
-          ? record.message
+        message
+          ? message
           : response.ok
             ? `${path} returned raw UniFi Access JSON`
-            : `${path} returned HTTP ${response.status} JSON without a message`,
+            : `${path} returned HTTP ${response.status} JSON without a message: ${JSON.stringify(payload).slice(0, 240)}`,
       data: data as T | undefined,
     };
   }
@@ -4154,6 +4155,15 @@ function extractDoorAccessPayload(record: Record<string, unknown>): unknown {
   if (objectValue) return objectValue;
 
   return record;
+}
+
+function getDoorAccessMessage(record: Record<string, unknown>): string {
+  const direct = ["message", "msg", "error", "detail", "description"]
+    .map((key) => record[key])
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const code = typeof record.code === "string" || typeof record.code === "number" ? String(record.code) : "";
+
+  return [code, direct].filter(Boolean).join(": ");
 }
 
 function isMissingDoorAccessRoute(message: string | undefined): boolean {

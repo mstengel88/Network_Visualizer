@@ -999,7 +999,7 @@ function requestUniFiJson(
 
           resolve({
             ok: false,
-            message: describeHttpError(response.statusCode, parseApiErrorMessage(body)),
+            message: describeAccessHttpError(response.statusCode, parseApiErrorMessage(body)),
             data: parsedBody,
           });
         });
@@ -1178,13 +1178,37 @@ function parseApiErrorMessage(body: string): string | null {
   if (!body.trim()) return null;
 
   try {
-    const parsed = JSON.parse(body) as { message?: unknown; code?: unknown };
-    const code = typeof parsed.code === "string" ? parsed.code : null;
-    const message = typeof parsed.message === "string" ? parsed.message : null;
+    const parsed = JSON.parse(body) as {
+      code?: unknown;
+      detail?: unknown;
+      description?: unknown;
+      error?: unknown;
+      message?: unknown;
+      msg?: unknown;
+    };
+    const code = typeof parsed.code === "string" || typeof parsed.code === "number" ? String(parsed.code) : null;
+    const message = [parsed.message, parsed.msg, parsed.error, parsed.detail, parsed.description]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
     return [code, message].filter(Boolean).join(": ") || null;
   } catch {
     return null;
   }
+}
+
+function describeAccessHttpError(statusCode: number | undefined, apiMessage: string | null): string {
+  if (statusCode === 401) {
+    return `HTTP 401 unauthorized${apiMessage ? ` - ${apiMessage}` : ""}. Check UNIFI_ACCESS_TOKEN from the UniFi Access developer/OpenAPI settings.`;
+  }
+
+  if (statusCode === 403) {
+    return `HTTP 403 forbidden${apiMessage ? ` - ${apiMessage}` : ""}. The Access token may not have permission to read or unlock doors.`;
+  }
+
+  if (statusCode === 404) {
+    return `HTTP 404 not found${apiMessage ? ` - ${apiMessage}` : ""}. Check UNIFI_ACCESS_URL and the Access OpenAPI port.`;
+  }
+
+  return `HTTP ${statusCode ?? "unknown"}${apiMessage ? ` - ${apiMessage}` : ""}`;
 }
 
 function describeHttpError(statusCode: number | undefined, apiMessage: string | null): string {
