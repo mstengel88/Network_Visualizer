@@ -364,6 +364,26 @@ function registerAccessRoutes(middlewares: {
     await handleAccessDoorsRequest(req, res, accessSessions);
   });
 
+  middlewares.use("/api/access-status", async (req, res) => {
+    if (req.method !== "GET") {
+      sendJson(res, 405, { ok: false, message: "Use GET for door access status" });
+      return;
+    }
+
+    const config = getUniFiAccessConfig();
+    const configProblem = describeAccessConfigProblem(config, req);
+    sendJson(res, configProblem ? 503 : 200, {
+      ok: !configProblem,
+      message: configProblem || "UniFi Access API settings are present",
+      data: {
+        hasUrl: Boolean(config.baseUrl),
+        accessHost: getSafeUrlHost(config.baseUrl),
+        hasToken: Boolean(config.apiToken),
+        endpoint: "/api/v1/developer/doors",
+      },
+    });
+  });
+
   middlewares.use("/api/access/buzz", async (req, res) => {
     await handleAccessBuzzRequest(req, res, accessSessions);
   });
@@ -396,6 +416,11 @@ async function handleAccessDoorsRequest(
           ok: false,
           message: "UniFi Access API is not configured. Set UNIFI_ACCESS_URL and UNIFI_ACCESS_TOKEN on the server.",
         });
+        return;
+      }
+      const configProblem = describeAccessConfigProblem(config, req);
+      if (configProblem) {
+        sendJson(res, 503, { ok: false, message: configProblem });
         return;
       }
 
@@ -450,6 +475,11 @@ async function handleAccessBuzzRequest(
           ok: false,
           message: "UniFi Access API is not configured. Set UNIFI_ACCESS_URL and UNIFI_ACCESS_TOKEN on the server.",
         });
+        return;
+      }
+      const configProblem = describeAccessConfigProblem(config, req);
+      if (configProblem) {
+        sendJson(res, 503, { ok: false, message: configProblem });
         return;
       }
 
@@ -533,6 +563,46 @@ function getUniFiAccessConfig(): { baseUrl: string; apiToken: string } {
       .replace(/\/+$/, ""),
     apiToken: process.env.UNIFI_ACCESS_TOKEN || process.env.DOOR_ACCESS_TOKEN || "",
   };
+}
+
+function describeAccessConfigProblem(
+  config: { baseUrl: string; apiToken: string },
+  req: http.IncomingMessage,
+): string | null {
+  if (!config.baseUrl) return "UNIFI_ACCESS_URL is not configured on the server.";
+  if (!config.apiToken) return "UNIFI_ACCESS_TOKEN is not configured on the server.";
+
+  let accessUrl: URL;
+  try {
+    accessUrl = new URL(config.baseUrl);
+  } catch {
+    return `UNIFI_ACCESS_URL is not a valid URL: ${config.baseUrl}`;
+  }
+
+  if (!["http:", "https:"].includes(accessUrl.protocol)) {
+    return "UNIFI_ACCESS_URL must start with http:// or https://.";
+  }
+
+  const requestHost = (req.headers.host ?? "").split(":")[0].toLowerCase();
+  const accessHost = accessUrl.hostname.toLowerCase();
+  if (requestHost && accessHost === requestHost) {
+    return "UNIFI_ACCESS_URL is pointed at this rack app. It must point directly to the UniFi Access application/OpenAPI host, not networkrack.ghstickets.com.";
+  }
+
+  if (accessHost.includes("ghstickets.com") || accessHost.includes("trycloudflare.com")) {
+    return "UNIFI_ACCESS_URL appears to point through Cloudflare. Use the local UniFi console IP and Access OpenAPI port from the Pi instead.";
+  }
+
+  return null;
+}
+
+function getSafeUrlHost(value: string): string {
+  try {
+    const url = new URL(value);
+    return url.host;
+  } catch {
+    return value ? "Invalid URL" : "";
+  }
 }
 
 function normalizeAccessDoor(value: unknown): Record<string, string> {
@@ -1022,13 +1092,19 @@ function requestUniFiAccessJson(
   apiToken: string,
 ): Promise<{ ok: boolean; message: string; data?: unknown }> {
   return new Promise((resolve) => {
-    const parsedUrl = new URL(targetUrl);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(targetUrl);
+    } catch {
+      resolve({ ok: false, message: `Invalid UniFi Access URL: ${targetUrl}` });
+      return;
+    }
     const transport = parsedUrl.protocol === "http:" ? http : https;
     const request = transport.request(
       parsedUrl,
       {
         method,
-        timeout: 15000,
+        timeout: 7000,
         rejectUnauthorized: false,
         headers: {
           Accept: "application/json",
@@ -1053,7 +1129,7 @@ function requestUniFiAccessJson(
 
           resolve({
             ok: false,
-            message: describeHttpError(response.statusCode, parseApiErrorMessage(body)),
+            message: describeAccessHttpError(response.statusCode, parseApiErrorMessage(body)),
             data: parsedBody,
           });
         });

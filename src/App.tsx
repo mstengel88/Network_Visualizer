@@ -3880,6 +3880,12 @@ function DoorAccessPage({
     void loadAccessDoors(sessionToken);
   }, [sessionToken]);
 
+  useEffect(() => {
+    if (!sessionToken) return;
+
+    void loadAccessStatus();
+  }, [sessionToken]);
+
   async function handleUnlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
@@ -3961,6 +3967,26 @@ function DoorAccessPage({
       setNotice(error instanceof Error ? `${error.message} Showing rack-derived door candidates only.` : "Could not load UniFi Access doors.");
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function loadAccessStatus() {
+    try {
+      const response = await fetch(`/api/access-status?t=${Date.now()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const result = await readDoorAccessResponse<{
+        accessHost?: string;
+        endpoint?: string;
+        hasToken?: boolean;
+        hasUrl?: boolean;
+      }>(response, "/api/access-status");
+
+      if (!result.ok) {
+        setNotice(`${result.message} Showing rack-derived door candidates only.`);
+      }
+    } catch {
+      // The door load request will surface the actionable error.
     }
   }
 
