@@ -1504,7 +1504,7 @@ function getConnectedEndpointDisplay(port: Device["ports"][number]): string {
   const connectedTo = formatConnectionLabel(port.connectedTo);
   const importedEndpoint = formatConnectionLabel(port.importedEndpointName);
   if (!isUsableEndpointLabel(connectedTo)) return "";
-  if (isGenericAccessEndpointName(connectedTo) && isUsableEndpointLabel(importedEndpoint) && !isGenericAccessEndpointName(importedEndpoint)) {
+  if (isGenericEndpointName(connectedTo) && isUsableEndpointLabel(importedEndpoint) && !isGenericEndpointName(importedEndpoint)) {
     return importedEndpoint;
   }
   return connectedTo;
